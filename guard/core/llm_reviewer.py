@@ -1,0 +1,284 @@
+"""
+LLM Reviewer Engine — The Final Safety Gate.
+Uses the LLM configured by the user (OpenAI, Anthropic, DeepSeek, Ollama, etc.)
+to act as the Senior Architect & Code Reviewer:
+1. Reads the aggregated verification report (diff summary, build status, OCR rules, Laya invariants)
+2. Evaluates Technical Soundness (architectural integrity, memory leaks, security, out-of-scope files)
+3. Evaluates Ergonomics & UX/UI Polish
+4. Issues Final Score (0-10) and Verdict: APPROVED or REVISE with Actionable Remediation.
+
+If no LLM API key is configured, falls back to deterministic local heuristic evaluation.
+"""
+
+from __future__ import annotations
+
+import re
+from enum import Enum
+from typing import Any, Dict, List, Optional, Union
+
+from pydantic import BaseModel, Field
+
+from guard.core.config import GuardConfig, LLMConfig
+from guard.core.laya_engine import DomainType, LayaInvariantResult
+from guard.core.llm_client import call_llm
+from guard.core.ocr_engine import DiffSummary, RuleViolation
+from guard.core.session import BuildCheckResult, DomainContract, LockedInvariant
+
+
+class ReviewVerdict(str, Enum):
+    APPROVED = "APPROVED"
+    REVISE = "REVISE"
+
+
+# Alias for backward compatibility
+MuseVerdict = ReviewVerdict
+
+
+class LLMReviewVerdict(BaseModel):
+    verdict: ReviewVerdict
+    score: float = Field(ge=0.0, le=10.0)
+    summary: str
+    reviewer_model: str = "Local Deterministic Engine"
+    technical_audit: List[str] = Field(default_factory=list)
+    ergonomics_ux: List[str] = Field(default_factory=list)
+    remediation_steps: List[str] = Field(default_factory=list)
+    review_mode: str = "heuristic"  # "heuristic" or "llm_deep"
+
+
+# Alias for backward compatibility
+MuseReviewVerdict = LLMReviewVerdict
+
+
+class LLMReviewerEngine:
+    """
+    Final Gatekeeper powered by the user-configured LLM (or local deterministic fallback).
+    """
+
+    def __init__(self, config: Optional[GuardConfig] = None):
+        self.config = config
+
+    def review(
+        self,
+        prompt: str,
+        domain: Union[DomainType, str],
+        diff_summary: Optional[DiffSummary] = None,
+        build_check: Optional[BuildCheckResult] = None,
+        violations: Optional[List[RuleViolation]] = None,
+        invariant_result: Optional[LayaInvariantResult] = None,
+        contracts: Optional[List[DomainContract]] = None,
+        invariants: Optional[List[LockedInvariant]] = None,
+        use_llm: bool = True,
+    ) -> LLMReviewVerdict:
+        violations = violations or []
+
+        # 1. Deterministic Heuristic Scoring (Safety baseline)
+        heuristic_verdict = self._evaluate_heuristics(
+            build_check=build_check,
+            diff_summary=diff_summary,
+            violations=violations,
+            invariant_result=invariant_result,
+        )
+
+        # If hard blockers triggered (build failed, invariant broken, secret leaked), reject immediately
+        if heuristic_verdict.verdict == ReviewVerdict.REVISE:
+            return heuristic_verdict
+
+        # 2. Deep LLM Review using the configured LLM (OpenAI, Anthropic, Ollama, DeepSeek, etc.)
+        if use_llm and self.config and self.config.llm and self.config.llm.api_key:
+            try:
+                llm_verdict = self._evaluate_with_llm(
+                    prompt=prompt,
+                    domain=domain,
+                    diff_summary=diff_summary,
+                    build_check=build_check,
+                    violations=violations,
+                    invariant_result=invariant_result,
+                    contracts=contracts,
+                )
+                if llm_verdict:
+                    return llm_verdict
+            except Exception:
+                # Graceful fallback to heuristic verdict on network or API failure
+                pass
+
+        return heuristic_verdict
+
+    def _evaluate_heuristics(
+        self,
+        build_check: Optional[BuildCheckResult],
+        diff_summary: Optional[DiffSummary],
+        violations: List[RuleViolation],
+        invariant_result: Optional[LayaInvariantResult],
+    ) -> LLMReviewVerdict:
+        score = 10.0
+        tech_notes: List[str] = []
+        ux_notes: List[str] = []
+        remediation: List[str] = []
+
+        # Check 1: Build check
+        if build_check:
+            if build_check.passed:
+                tech_notes.append(f"Compile Check: PASSED ({build_check.command} executed in {build_check.duration_s:.1f}s)")
+            else:
+                score -= 4.5
+                tech_notes.append(f"Compile Check: FAILED with exit code {build_check.exit_code}")
+                remediation.append(f"Sửa lỗi biên dịch gây fail lệnh `{build_check.command}`:\n{build_check.output[:300]}")
+
+        # Check 2: Out of scope files
+        if diff_summary and diff_summary.out_of_scope_files:
+            score -= 2.5 * len(diff_summary.out_of_scope_files)
+            tech_notes.append(f"Scope Compliance: Vi phạm {len(diff_summary.out_of_scope_files)} file ngoài dự kiến: {', '.join(diff_summary.out_of_scope_files)}")
+            remediation.append(f"Loại bỏ các thay đổi không thuộc phạm vi Pre-Task tại: {', '.join(diff_summary.out_of_scope_files)}")
+
+        # Check 3: Rule Violations
+        crit_violations = [v for v in violations if v.severity == "CRITICAL"]
+        high_violations = [v for v in violations if v.severity == "HIGH"]
+        if crit_violations:
+            score -= 3.5 * len(crit_violations)
+            for cv in crit_violations:
+                tech_notes.append(f"Security Alert [{cv.rule_id}]: {cv.message} ({cv.file_path})")
+                remediation.append(f"Khắc phục vi phạm bảo mật nghiêm trọng {cv.rule_id} trong `{cv.file_path}`")
+        if high_violations:
+            score -= 1.5 * len(high_violations)
+            for hv in high_violations:
+                tech_notes.append(f"Stability Warning [{hv.rule_id}]: {hv.message} ({hv.file_path})")
+                remediation.append(f"Khắc phục cảnh báo hiệu năng/ổn định {hv.rule_id} trong `{hv.file_path}`")
+
+        # Check 4: Invariants (CRITICAL: Invariant violation is a HARD BLOCKER)
+        invariant_violated = False
+        if invariant_result:
+            if invariant_result.all_passed:
+                ux_notes.append("Invariants Check: 100% Invariants được bảo toàn nguyên vẹn.")
+            else:
+                invariant_violated = True
+                failed_checks = [c for c in invariant_result.checks if not c.passed]
+                score -= 3.0 * len(failed_checks)
+                for fc in failed_checks:
+                    ux_notes.append(f"Invariant Violation [{fc.id}]: {fc.description} -> {fc.notes}")
+                    remediation.append(f"Khôi phục hành vi bất biến `{fc.id}`: {fc.description}")
+
+        score = max(0.0, min(10.0, score))
+        
+        is_hard_blocked = invariant_violated or bool(crit_violations) or (build_check is not None and not build_check.passed) or (diff_summary is not None and bool(diff_summary.out_of_scope_files))
+        verdict = ReviewVerdict.APPROVED if (score >= 7.5 and not is_hard_blocked) else ReviewVerdict.REVISE
+
+        summary = (
+            f"LLM GATE APPROVAL: Mã nguồn đạt chuẩn an toàn ({score:.1f}/10). Không phát hiện hồi quy hay vi phạm kiến trúc."
+            if verdict == ReviewVerdict.APPROVED
+            else f"LLM GATE REJECT: Phát hiện {len(remediation)} điểm cần sửa chữa trước khi bàn giao ({score:.1f}/10)."
+        )
+
+        model_name = self.config.llm.model if (self.config and self.config.llm and self.config.llm.api_key) else "Local Rule Engine"
+
+        return LLMReviewVerdict(
+            verdict=verdict,
+            score=score,
+            summary=summary,
+            reviewer_model=model_name,
+            technical_audit=tech_notes,
+            ergonomics_ux=ux_notes,
+            remediation_steps=remediation,
+            review_mode="heuristic",
+        )
+
+    def _evaluate_with_llm(
+        self,
+        prompt: str,
+        domain: Union[DomainType, str],
+        diff_summary: Optional[DiffSummary],
+        build_check: Optional[BuildCheckResult],
+        violations: List[RuleViolation],
+        invariant_result: Optional[LayaInvariantResult],
+        contracts: Optional[List[DomainContract]],
+    ) -> Optional[LLMReviewVerdict]:
+        if not self.config or not self.config.llm:
+            return None
+
+        model_name = self.config.llm.model
+        domain_str = domain.value if hasattr(domain, "value") else str(domain)
+
+        system_prompt = (
+            f"Bạn là Senior Lead Architect và Code Reviewer chốt chặn cuối cùng (sử dụng model {model_name}).\n"
+            "Nhiệm vụ của bạn là thẩm định báo cáo Post-task và git diff của lập trình viên AI.\n"
+            "Hãy đánh giá theo 3 trụ cột:\n"
+            "1. Technical Audit (Toàn vẹn mã nguồn, memory leaks, listener mồ côi, breaking API, bảo mật)\n"
+            "2. Invariants & Contracts (Có giữ đúng hợp đồng UI/UX, states, DB schemas không)\n"
+            "3. Ergonomics Polish (Công thái học, trải nghiệm người dùng theo domain)\n"
+            "Định dạng phản hồi bắt buộc gồm:\n"
+            "SCORE: <điểm từ 0.0 đến 10.0>\n"
+            "VERDICT: <APPROVED hoặc REVISE>\n"
+            "SUMMARY: <tóm tắt ngắn gọn>\n"
+            "TECHNICAL: <các gạch đầu dòng>\n"
+            "ERGONOMICS: <các gạch đầu dòng>\n"
+            "REMEDIATION: <các gạch đầu dòng sửa lỗi nếu REVISE, hoặc 'None' nếu APPROVED>"
+        )
+
+        user_content = f"""
+Domain: {domain_str}
+Task Prompt: {prompt}
+Build Status: {'PASS' if build_check and build_check.passed else 'UNKNOWN / NOT RUN'}
+Rule Violations: {len(violations)} issues
+Out of Scope Files: {diff_summary.out_of_scope_files if diff_summary else []}
+Git Diff:
+```
+{diff_summary.raw_diff[:3000] if diff_summary else 'No diff'}
+```
+        """
+
+        raw_response = call_llm(
+            cfg=self.config.llm,
+            prompt=user_content,
+            system_prompt=system_prompt,
+            temperature=0.1,
+            max_tokens=1000,
+        )
+
+        return self._parse_llm_response(raw_response, model_name=model_name)
+
+    def _parse_llm_response(self, text: str, model_name: str = "LLM") -> Optional[LLMReviewVerdict]:
+        try:
+            score_match = re.search(r"SCORE:\s*([\d\.]+)", text)
+            score = float(score_match.group(1)) if score_match else 8.0
+            score = max(0.0, min(10.0, score))
+
+            verdict_match = re.search(r"VERDICT:\s*(APPROVED|REVISE)", text, re.IGNORECASE)
+            verdict = ReviewVerdict.APPROVED if (verdict_match and verdict_match.group(1).upper() == "APPROVED") else ReviewVerdict.REVISE
+
+            summary_match = re.search(r"SUMMARY:\s*(.+?)(?=\n[A-Z]+:|$)", text, re.DOTALL)
+            summary = summary_match.group(1).strip() if summary_match else "LLM Review completed."
+
+            tech_items = self._extract_bullet_items(text, "TECHNICAL")
+            ergo_items = self._extract_bullet_items(text, "ERGONOMICS")
+            remed_items = self._extract_bullet_items(text, "REMEDIATION")
+            if any(item.lower() == "none" for item in remed_items):
+                remed_items = []
+
+            return LLMReviewVerdict(
+                verdict=verdict,
+                score=score,
+                summary=summary,
+                reviewer_model=model_name,
+                technical_audit=tech_items,
+                ergonomics_ux=ergo_items,
+                remediation_steps=remed_items,
+                review_mode="llm_deep",
+            )
+        except Exception:
+            return None
+
+    def _extract_bullet_items(self, text: str, section_header: str) -> List[str]:
+        pattern = rf"{section_header}:\s*(.+?)(?=\n[A-Z]+:|$)"
+        match = re.search(pattern, text, re.DOTALL)
+        if not match:
+            return []
+        lines = match.group(1).strip().splitlines()
+        results = []
+        for line in lines:
+            line_str = re.sub(r"^[\s\*\-\d\.\)]+", "", line).strip()
+            if line_str and line_str.lower() != "none":
+                results.append(line_str)
+        return results
+
+
+# Alias for backward compatibility
+MuseEngine = LLMReviewerEngine

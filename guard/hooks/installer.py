@@ -1,0 +1,130 @@
+"""
+Hook Installer and Manager for Laya-OCR-Guard.
+Supports installing and managing:
+1. Git Hooks: `.git/hooks/pre-commit` and `prepare-commit-msg`
+2. Agent Hooks: `.guard/bin/guard-exec`
+Safely backs up any existing user hooks before modification.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import stat
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+from guard.hooks.templates import (
+    AGENT_WRAPPER_SCRIPT,
+    GIT_PRE_COMMIT_HOOK,
+    GIT_PREPARE_COMMIT_MSG_HOOK,
+)
+
+
+class HookInstaller:
+    """
+    Manages hook lifecycle in target repositories.
+    """
+
+    def __init__(self, repo_path: Optional[Path] = None):
+        self.repo_path = Path(repo_path or Path.cwd()).resolve()
+        self.git_hooks_dir = self.repo_path / ".git" / "hooks"
+        self.guard_bin_dir = self.repo_path / ".guard" / "bin"
+
+    def is_git_repo(self) -> bool:
+        return (self.repo_path / ".git").is_dir()
+
+    def get_status(self) -> Dict[str, Any]:
+        """
+        Check which hooks are currently installed.
+        """
+        pre_commit = self.git_hooks_dir / "pre-commit"
+        prep_msg = self.git_hooks_dir / "prepare-commit-msg"
+        agent_exec = self.guard_bin_dir / "guard-exec"
+
+        return {
+            "is_git_repo": self.is_git_repo(),
+            "pre_commit_installed": pre_commit.exists() and "LAYA-OCR-GUARD" in pre_commit.read_text(encoding="utf-8", errors="ignore"),
+            "prepare_commit_msg_installed": prep_msg.exists() and "LAYA-OCR-GUARD" in prep_msg.read_text(encoding="utf-8", errors="ignore"),
+            "agent_wrapper_installed": agent_exec.exists(),
+        }
+
+    def install(self, mode: str = "all") -> Tuple[bool, List[str]]:
+        """
+        Install hooks into repository.
+        mode: 'git', 'agent', or 'all'
+        """
+        messages = []
+
+        if not self.is_git_repo() and mode in ["git", "all"]:
+            return False, ["Target directory is not a Git repository. Cannot install git hooks."]
+
+        # 1. Install Git Hooks
+        if mode in ["git", "all"] and self.is_git_repo():
+            self.git_hooks_dir.mkdir(parents=True, exist_ok=True)
+
+            # Pre-commit hook
+            pre_commit_path = self.git_hooks_dir / "pre-commit"
+            self._write_hook_file(pre_commit_path, GIT_PRE_COMMIT_HOOK)
+            messages.append(f"Installed Git pre-commit hook at {pre_commit_path}")
+
+            # Prepare commit message hook
+            prep_msg_path = self.git_hooks_dir / "prepare-commit-msg"
+            self._write_hook_file(prep_msg_path, GIT_PREPARE_COMMIT_MSG_HOOK)
+            messages.append(f"Installed Git prepare-commit-msg hook at {prep_msg_path}")
+
+        # 2. Install Agent Wrapper
+        if mode in ["agent", "all"]:
+            self.guard_bin_dir.mkdir(parents=True, exist_ok=True)
+            agent_path = self.guard_bin_dir / "guard-exec"
+            self._write_hook_file(agent_path, AGENT_WRAPPER_SCRIPT)
+            messages.append(f"Installed Agent harness wrapper at {agent_path}")
+
+        return True, messages
+
+    def uninstall(self) -> Tuple[bool, List[str]]:
+        """
+        Safely uninstall Guard hooks and restore backups if they exist.
+        """
+        messages = []
+
+        # Remove git hooks
+        for hook_name in ["pre-commit", "prepare-commit-msg"]:
+            hook_file = self.git_hooks_dir / hook_name
+            backup_file = self.git_hooks_dir / f"{hook_name}.guard.bak"
+
+            if hook_file.exists():
+                content = hook_file.read_text(encoding="utf-8", errors="ignore")
+                if "LAYA-OCR-GUARD" in content:
+                    hook_file.unlink()
+                    messages.append(f"Removed Guard hook: {hook_file}")
+
+                    # Restore backup if available
+                    if backup_file.exists():
+                        backup_file.rename(hook_file)
+                        messages.append(f"Restored previous hook backup from {backup_file}")
+
+        # Remove agent wrapper
+        agent_file = self.guard_bin_dir / "guard-exec"
+        if agent_file.exists():
+            agent_file.unlink()
+            messages.append(f"Removed Agent harness wrapper: {agent_file}")
+
+        return True, messages
+
+    def _write_hook_file(self, target_path: Path, script_content: str):
+        # Backup existing hook if not created by Guard
+        if target_path.exists():
+            existing_content = target_path.read_text(encoding="utf-8", errors="ignore")
+            if "LAYA-OCR-GUARD" not in existing_content:
+                backup_path = target_path.with_suffix(".guard.bak")
+                target_path.rename(backup_path)
+
+        target_path.write_text(script_content, encoding="utf-8")
+
+        # Set executable permissions on POSIX systems
+        try:
+            current_mode = target_path.stat().st_mode
+            target_path.chmod(current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        except Exception:
+            pass
