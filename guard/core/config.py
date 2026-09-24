@@ -34,7 +34,7 @@ class LLMConfig(BaseModel):
     base_url: str = Field(default="https://api.openai.com/v1", description="LLM Base URL")
     api_key: str = Field(default="", description="API Authentication Token")
     model: str = Field(default="gpt-4o", description="Target model name")
-    timeout: float = Field(default=30.0, description="HTTP Timeout in seconds")
+    timeout: float = Field(default=60.0, description="HTTP Timeout in seconds")
 
     @property
     def masked_api_key(self) -> str:
@@ -74,12 +74,6 @@ def get_local_config_path(start_path: Optional[Path] = None) -> Path:
 
 
 def load_config(repo_path: Optional[Path] = None) -> GuardConfig:
-    """
-    Load configuration with hierarchy:
-    1. Local repo config (.guard/config.json) if exists
-    2. Global config (~/.guard/config.json) if exists
-    3. Default config
-    """
     local_path = get_local_config_path(repo_path)
     if local_path.is_file():
         try:
@@ -110,22 +104,13 @@ def save_config(config: GuardConfig, local: bool = False, repo_path: Optional[Pa
 
 
 def sync_to_alibaba_ocr(llm: LLMConfig) -> Tuple[bool, str]:
-    """
-    Synchronize Guard LLM settings to Alibaba Open Code Review CLI:
-    `ocr config set llm.url ...`
-    `ocr config set llm.auth_token ...`
-    `ocr config set llm.model ...`
-    """
     ocr_bin = shutil.which("ocr")
     if not ocr_bin:
         return False, "CLI 'ocr' (@alibaba-group/open-code-review) not found in PATH."
 
     try:
-        # Base url
         subprocess.run([ocr_bin, "config", "set", "llm.url", llm.base_url], check=True, capture_output=True, text=True)
-        # Auth token (use a placeholder if blank)
         subprocess.run([ocr_bin, "config", "set", "llm.auth_token", llm.api_key or "none"], check=True, capture_output=True, text=True)
-        # Model
         subprocess.run([ocr_bin, "config", "set", "llm.model", llm.model], check=True, capture_output=True, text=True)
         return True, "Successfully synced configuration to Alibaba OCR CLI."
     except subprocess.CalledProcessError as e:
@@ -135,15 +120,6 @@ def sync_to_alibaba_ocr(llm: LLMConfig) -> Tuple[bool, str]:
 
 
 def run_llm_wizard(local: bool = False, repo_path: Optional[Path] = None) -> GuardConfig:
-    """
-    Interactive Step-by-Step Wizard for LLM Setup:
-    1. Select Protocol: OpenAI-compatible or Anthropic
-    2. Input Base URL (with smart defaults & hint for Ollama/DeepSeek)
-    3. Input API Key (masked)
-    4. Input Model Name (with smart defaults)
-    5. Ping Test connection
-    6. Save & Auto-sync to Alibaba OCR
-    """
     current_cfg = load_config(repo_path)
     console.print(Panel(
         "[bold cyan]🤖 LAYA-OCR-GUARD — LLM CONFIGURATION WIZARD[/bold cyan]\n"
@@ -153,7 +129,7 @@ def run_llm_wizard(local: bool = False, repo_path: Optional[Path] = None) -> Gua
 
     # Step 1: Select Protocol
     console.print("\n[bold yellow]Bước 1: Chọn chuẩn giao thức API (Protocol)[/bold yellow]")
-    console.print("  [1] [bold green]OpenAI / OpenAI-Compatible[/bold green] (OpenAI, Ollama, DeepSeek, OpenRouter, vLLM, Groq...)")
+    console.print("  [1] [bold green]OpenAI / OpenAI-Compatible[/bold green] (OpenAI, Ollama, DeepSeek, OpenRouter, vLLM, Gateway...)")
     console.print("  [2] [bold magenta]Anthropic[/bold magenta] (Claude API)")
     
     choice = Prompt.ask(
@@ -175,7 +151,7 @@ def run_llm_wizard(local: bool = False, repo_path: Optional[Path] = None) -> Gua
     # Step 2: Base URL
     console.print(f"\n[bold yellow]Bước 2: Base URL[/bold yellow]")
     if protocol == LLMProtocol.OPENAI:
-        console.print("[dim]• OpenAI: https://api.openai.com/v1\n• Ollama: http://localhost:11434/v1\n• DeepSeek: https://api.deepseek.com/v1\n• OpenRouter: https://openrouter.ai/api/v1[/dim]")
+        console.print("[dim]• OpenAI: https://api.openai.com/v1\n• Ollama: http://localhost:11434/v1\n• DeepSeek: https://api.deepseek.com/v1\n• Local Gateway: http://127.0.0.1:8090/v1[/dim]")
     else:
         console.print("[dim]• Anthropic: https://api.anthropic.com/v1[/dim]")
         
@@ -186,46 +162,55 @@ def run_llm_wizard(local: bool = False, repo_path: Optional[Path] = None) -> Gua
     env_key = os.environ.get("OPENAI_API_KEY" if protocol == LLMProtocol.OPENAI else "ANTHROPIC_API_KEY", "")
     key_default = current_cfg.llm.api_key or env_key
     
-    if protocol == LLMProtocol.OPENAI and ("localhost" in base_url or "127.0.0.1" in base_url):
+    if protocol == LLMProtocol.OPENAI and ("localhost" in base_url or "127.0.0.1" in base_url) and not key_default:
         console.print("[dim]Dùng local model (Ollama), có thể bấm Enter để trống key.[/dim]")
-        api_key = Prompt.ask("API Key (bỏ qua nếu là Ollama)", default=key_default, password=True)
+        api_key = Prompt.ask("API Key (bỏ qua nếu là Ollama)", default="", password=True)
     else:
         api_key = Prompt.ask("Nhập API Key", default=key_default, password=True)
 
     # Step 4: Model Name
     console.print(f"\n[bold yellow]Bước 4: Model Name[/bold yellow]")
     if protocol == LLMProtocol.OPENAI:
-        console.print("[dim]Ví dụ: gpt-4o, gpt-4o-mini, deepseek-chat, qwen2.5-coder:latest[/dim]")
+        console.print("[dim]Ví dụ: gpt-4o, deepseek-chat, muse, qwen2.5-coder:latest[/dim]")
     else:
         console.print("[dim]Ví dụ: claude-3-7-sonnet, claude-3-5-sonnet, claude-3-5-haiku[/dim]")
         
     model = Prompt.ask("Tên Model", default=default_model)
+
+    # Step 5: Timeout
+    console.print(f"\n[bold yellow]Bước 5: Timeout[/bold yellow]")
+    console.print("[dim]Thời gian chờ phản hồi tối đa (giây). Dùng local gateway nên để 60-120s.[/dim]")
+    timeout_str = Prompt.ask("Timeout (giây)", default=str(int(current_cfg.llm.timeout or 60.0)))
+    try:
+        timeout_val = float(timeout_str)
+    except ValueError:
+        timeout_val = 60.0
 
     new_llm = LLMConfig(
         protocol=protocol,
         base_url=base_url.rstrip("/"),
         api_key=api_key,
         model=model,
-        timeout=current_cfg.llm.timeout,
+        timeout=timeout_val,
     )
     current_cfg.llm = new_llm
 
-    # Step 5: Test Ping
-    console.print(f"\n[bold yellow]Bước 5: Kiểm tra kết nối (Ping Test)[/bold yellow]")
+    # Step 6: Test Ping
+    console.print(f"\n[bold yellow]Bước 6: Kiểm tra kết nối (Ping Test)[/bold yellow]")
     do_ping = Confirm.ask("Bạn có muốn gửi ping kiểm tra kết nối ngay không?", default=True)
     if do_ping:
         with console.status("[cyan]Đang gửi request kiểm tra tới LLM...[/cyan]"):
             from guard.core.llm_client import ping_llm
             success, msg, latency = ping_llm(new_llm)
         if success:
-            console.print(f"[bold green]✅ Kết nối thành công![/bold green] (Latency: {latency:.0f}ms)")
+            console.print(f"[bold green]✅ Kết nối thành công![/bold green] (Phản hồi: {latency:.1f}ms - {msg})")
         else:
             console.print(f"[bold red]❌ Kết nối thất bại:[/bold red] {msg}")
             if not Confirm.ask("Vẫn tiếp tục lưu cấu hình này?", default=True):
                 console.print("[yellow]Đã hủy lưu cấu hình.[/yellow]")
                 return current_cfg
 
-    # Step 6: Save & Auto-sync
+    # Step 7: Save & Auto-sync
     target_path = save_config(current_cfg, local=local, repo_path=repo_path)
     scope_str = "Local (Repo)" if local else "Global (Toàn máy)"
     console.print(f"[bold green]💾 Đã lưu cấu hình {scope_str} tại:[/bold green] [dim]{target_path}[/dim]")
