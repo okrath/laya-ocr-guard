@@ -69,6 +69,8 @@ class GitDiffInspector:
     def get_diff(self, staged_only: bool = False, base_ref: Optional[str] = None) -> str:
         """
         Extract raw diff from Git, including synthetic diffs for untracked files.
+        Always returns a valid string (never None).
+        Safely decodes UTF-8 to prevent charmap/UnicodeDecodeError on Windows.
         """
         if not self.is_git_repo():
             return ""
@@ -79,18 +81,35 @@ class GitDiffInspector:
         elif base_ref:
             cmd.append(base_ref)
         else:
+            # Include both staged and unstaged (against HEAD if exists)
             cmd.append("HEAD")
 
         diff_output = ""
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, check=False)
-            if res.returncode == 0:
+            res = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            if res.returncode == 0 and res.stdout:
                 diff_output = res.stdout
             else:
-                res2 = subprocess.run(["git", "-C", str(self.repo_path), "diff"], capture_output=True, text=True, check=False)
-                diff_output = res2.stdout
+                res2 = subprocess.run(
+                    ["git", "-C", str(self.repo_path), "diff"],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    check=False,
+                )
+                diff_output = res2.stdout or ""
         except Exception:
             diff_output = ""
+
+        diff_output = diff_output or ""
 
         # Append synthetic diffs for untracked files (so rules engine can inspect secrets/NPE)
         untracked = self.get_untracked_files()
@@ -122,7 +141,7 @@ class GitDiffInspector:
             else:
                 diff_output = "\n".join(synthetic_diffs)
 
-        return diff_output
+        return diff_output or ""
 
     def get_untracked_files(self) -> List[str]:
         if not self.is_git_repo():
@@ -132,28 +151,32 @@ class GitDiffInspector:
                 ["git", "-C", str(self.repo_path), "status", "--porcelain"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False,
             )
             files = []
-            for line in res.stdout.splitlines():
+            stdout_text = res.stdout or ""
+            for line in stdout_text.splitlines():
                 if line.startswith("?? "):
                     files.append(line[3:].strip())
             return files
         except Exception:
             return []
 
-    def parse_diff(self, raw_diff: str, expected_files: Optional[List[str]] = None) -> DiffSummary:
+    def parse_diff(self, raw_diff: Optional[str], expected_files: Optional[List[str]] = None) -> DiffSummary:
         """
         Parse raw git diff string into structured FileDiffStat and detect out-of-scope changes.
         """
-        if not raw_diff.strip():
+        diff_text = raw_diff or ""
+        if not diff_text.strip():
             return DiffSummary(files=[], raw_diff="", is_clean=True)
 
         files_map: Dict[str, FileDiffStat] = {}
         current_file: Optional[str] = None
         current_status = "modified"
 
-        for line in raw_diff.splitlines():
+        for line in diff_text.splitlines():
             if line.startswith("diff --git"):
                 match = re.search(r"diff --git a/(.*) b/(.*)", line)
                 if match:
@@ -185,7 +208,7 @@ class GitDiffInspector:
             total_insertions=tot_ins,
             total_deletions=tot_del,
             out_of_scope_files=out_of_scope,
-            raw_diff=raw_diff,
+            raw_diff=diff_text,
             is_clean=len(stats_list) == 0,
         )
 
@@ -224,12 +247,13 @@ class OCRRulebookRunner:
         r"""(?i)(data|res|response|user|item)\.([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)"""
     )
 
-    def scan_diff(self, raw_diff: str) -> List[RuleViolation]:
+    def scan_diff(self, raw_diff: Optional[str]) -> List[RuleViolation]:
+        diff_text = raw_diff or ""
         violations: List[RuleViolation] = []
         current_file = "unknown"
         line_num = 0
 
-        for line in raw_diff.splitlines():
+        for line in diff_text.splitlines():
             if line.startswith("+++ b/"):
                 current_file = line[6:].strip()
                 line_num = 0
@@ -267,7 +291,7 @@ class OCRRulebookRunner:
                     ))
 
                 # Rule 3: Memory leak / Dangling Event Listener
-                if self.DANGLING_LISTENER.search(added_code) and "removeEventListener" not in raw_diff:
+                if self.DANGLING_LISTENER.search(added_code) and "removeEventListener" not in diff_text:
                     violations.append(RuleViolation(
                         rule_id="PERF-001",
                         severity="HIGH",
@@ -297,7 +321,7 @@ def run_ocr_audit(
     background_context: Optional[str] = None,
 ) -> OCRReviewResult:
     inspector = GitDiffInspector(repo_path)
-    raw_diff = inspector.get_diff()
+    raw_diff = inspector.get_diff() or ""
     summary = inspector.parse_diff(raw_diff, expected_files=expected_files)
 
     rulebook = OCRRulebookRunner()
@@ -322,8 +346,16 @@ def run_ocr_audit(
             cmd = [ocr_bin, "review"]
             if background_context:
                 cmd.extend(["--background", background_context])
-            res = subprocess.run(cmd, cwd=str(repo_path or Path.cwd()), capture_output=True, text=True, timeout=45)
-            ocr_output = res.stdout or res.stderr
+            res = subprocess.run(
+                cmd,
+                cwd=str(repo_path or Path.cwd()),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=45,
+            )
+            ocr_output = (res.stdout or "") + (res.stderr or "")
         except Exception as e:
             ocr_output = f"OCR CLI notice: {str(e)}"
 

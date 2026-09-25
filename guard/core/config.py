@@ -109,12 +109,13 @@ def sync_to_alibaba_ocr(llm: LLMConfig) -> Tuple[bool, str]:
         return False, "CLI 'ocr' (@alibaba-group/open-code-review) not found in PATH."
 
     try:
-        subprocess.run([ocr_bin, "config", "set", "llm.url", llm.base_url], check=True, capture_output=True, text=True)
-        subprocess.run([ocr_bin, "config", "set", "llm.auth_token", llm.api_key or "none"], check=True, capture_output=True, text=True)
-        subprocess.run([ocr_bin, "config", "set", "llm.model", llm.model], check=True, capture_output=True, text=True)
+        subprocess.run([ocr_bin, "config", "set", "llm.url", llm.base_url], check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        subprocess.run([ocr_bin, "config", "set", "llm.auth_token", llm.api_key or "none"], check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        subprocess.run([ocr_bin, "config", "set", "llm.model", llm.model], check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
         return True, "Successfully synced configuration to Alibaba OCR CLI."
     except subprocess.CalledProcessError as e:
-        return False, f"Failed to sync to OCR CLI: {e.stderr or e.stdout or str(e)}"
+        err_out = (e.stderr or "") + (e.stdout or "")
+        return False, f"Failed to sync to OCR CLI: {err_out or str(e)}"
     except Exception as e:
         return False, f"Error executing OCR CLI: {str(e)}"
 

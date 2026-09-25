@@ -59,8 +59,9 @@ def get_installed_ocr_version() -> Optional[str]:
     if not ocr_bin:
         return None
     try:
-        res = subprocess.run([ocr_bin, "--version"], capture_output=True, text=True, timeout=5)
-        nums = re.findall(r"\d+\.\d+\.\d+", res.stdout + res.stderr)
+        res = subprocess.run([ocr_bin, "--version"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
+        out = (res.stdout or "") + (res.stderr or "")
+        nums = re.findall(r"\d+\.\d+\.\d+", out)
         return nums[0] if nums else "installed"
     except Exception:
         return "installed"
@@ -177,11 +178,12 @@ def perform_ocr_upgrade(force: bool = False, quarantine_days: float = 3.0) -> Tu
 
     pkg_spec = f"@alibaba-group/open-code-review@{check.latest_version}" if check.latest_version else "@alibaba-group/open-code-review@latest"
     try:
-        proc = subprocess.run([npm_bin, "install", "-g", pkg_spec], capture_output=True, text=True, timeout=120)
+        proc = subprocess.run([npm_bin, "install", "-g", pkg_spec], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         if proc.returncode == 0:
             new_ver = get_installed_ocr_version() or check.latest_version or "latest"
             return True, f"✅ Đã nâng cấp thành công Alibaba OCR lên phiên bản v{new_ver}!"
-        return False, f"npm install thất bại (exit code {proc.returncode}): {proc.stderr or proc.stdout}"
+        err_out = (proc.stderr or "") + (proc.stdout or "")
+        return False, f"npm install thất bại (exit code {proc.returncode}): {err_out}"
     except Exception as e:
         return False, f"Lỗi khi chạy npm install: {str(e)}"
 
@@ -192,9 +194,10 @@ def perform_self_upgrade() -> Tuple[bool, str]:
     """
     pip_cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "git+https://github.com/okrath/laya-ocr-guard.git"]
     try:
-        proc = subprocess.run(pip_cmd, capture_output=True, text=True, timeout=120)
+        proc = subprocess.run(pip_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         if proc.returncode == 0:
             return True, "✅ Đã nâng cấp thành công Laya-OCR-Guard từ GitHub repository!"
-        return False, f"pip upgrade thất bại: {proc.stderr or proc.stdout}"
+        err_out = (proc.stderr or "") + (proc.stdout or "")
+        return False, f"pip upgrade thất bại: {err_out}"
     except Exception as e:
         return False, f"Lỗi khi nâng cấp guard: {str(e)}"

@@ -144,7 +144,7 @@ def execute_post_task(repo_path: Optional[Path] = None, auto_fix: bool = False) 
 
     # 1. OCR Diff & Blast Radius Audit
     diff_inspector = GitDiffInspector(target_repo)
-    raw_diff = diff_inspector.get_diff()
+    raw_diff = diff_inspector.get_diff() or ""
     diff_summary = diff_inspector.parse_diff(raw_diff, expected_files=expected_files)
 
     # 2. OCR Rulebook scan
@@ -163,14 +163,18 @@ def execute_post_task(repo_path: Optional[Path] = None, auto_fix: bool = False) 
                 cwd=str(target_repo),
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=60,
             )
             duration = time.perf_counter() - start_t
+            stdout_str = p.stdout or ""
+            stderr_str = p.stderr or ""
             build_res = BuildCheckResult(
                 command=build_cmd,
                 passed=(p.returncode == 0),
                 exit_code=p.returncode,
-                output=p.stdout + p.stderr,
+                output=stdout_str + stderr_str,
                 duration_s=duration,
             )
         except Exception as e:
@@ -433,7 +437,7 @@ def review_cmd(
     """
     target_repo = Path(repo).resolve() if repo else Path.cwd().resolve()
     inspector = GitDiffInspector(target_repo)
-    raw_diff = inspector.get_diff()
+    raw_diff = inspector.get_diff() or ""
     if not raw_diff.strip():
         console.print("[yellow]Working tree is clean. Nothing to review.[/yellow]")
         return
@@ -540,8 +544,14 @@ def doctor_cmd(
     git_bin = shutil.which("git")
     if git_bin:
         try:
-            gv = subprocess.run(["git", "--version"], capture_output=True, text=True).stdout.strip()
-            table.add_row("Git VCS", "✅ OK", gv)
+            gv = subprocess.run(
+                ["git", "--version"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            ).stdout or ""
+            table.add_row("Git VCS", "✅ OK", gv.strip())
         except Exception:
             table.add_row("Git VCS", "⚠️ Warn", "Git installed but version query failed")
     else:
@@ -551,8 +561,14 @@ def doctor_cmd(
     node_bin = shutil.which("node")
     if node_bin:
         try:
-            nv = subprocess.run(["node", "-v"], capture_output=True, text=True).stdout.strip()
-            table.add_row("Node.js Runtime", "✅ OK", f"Node {nv}")
+            nv = subprocess.run(
+                ["node", "-v"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            ).stdout or ""
+            table.add_row("Node.js Runtime", "✅ OK", f"Node {nv.strip()}")
         except Exception:
             table.add_row("Node.js Runtime", "⚠️ Warn", "Node installed but query failed")
     else:
