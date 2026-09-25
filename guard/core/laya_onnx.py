@@ -44,10 +44,35 @@ def get_laya_model_dir() -> Path:
     return model_dir
 
 
-def get_model_path(model_name: str = DEFAULT_MODEL) -> Path:
+def resolve_model_file(model_name: Optional[str] = None) -> Tuple[str, Path]:
+    """
+    Resolve which ONNX model file to use.
+    Supports 'laya', 'laya-int4', 'laya-int8'.
+    Checks disk for existing model weights, auto-detecting int4 or int8.
+    """
+    model_dir = get_laya_model_dir()
+    p4 = model_dir / "model_int4.onnx"
+    p8 = model_dir / "model_int8.onnx"
+
+    name_lower = (model_name or "").lower().strip()
+
+    if "int8" in name_lower:
+        return "laya-int8", p8
+    if "int4" in name_lower:
+        return "laya-int4", p4
+
+    # Generic 'laya' or default: check whichever file is already downloaded
+    if p4.exists():
+        return "laya-int4", p4
+    if p8.exists():
+        return "laya-int8", p8
+    return "laya-int4", p4
+
+
+def get_model_path(model_name: Optional[str] = None) -> Path:
     """Get absolute path to local ONNX model file."""
-    norm_name = "model_int4.onnx" if "int4" in model_name.lower() else "model_int8.onnx"
-    return get_laya_model_dir() / norm_name
+    _, path = resolve_model_file(model_name)
+    return path
 
 
 def get_assets_dir() -> Path:
@@ -55,10 +80,20 @@ def get_assets_dir() -> Path:
     return Path(__file__).resolve().parent.parent / "assets" / "laya"
 
 
-def is_model_installed(model_name: str = DEFAULT_MODEL) -> bool:
+def is_model_installed(model_name: Optional[str] = None) -> bool:
     """Check if model weight file exists locally."""
-    p = get_model_path(model_name)
-    return p.is_file() and p.stat().st_size > 10_000_000  # At least 10MB
+    name_lower = (model_name or "").lower().strip()
+    model_dir = get_laya_model_dir()
+    if "int8" in name_lower:
+        p = model_dir / "model_int8.onnx"
+        return p.is_file() and p.stat().st_size > 10_000_000
+    if "int4" in name_lower:
+        p = model_dir / "model_int4.onnx"
+        return p.is_file() and p.stat().st_size > 10_000_000
+    # Generic 'laya': check either int4 or int8
+    p4 = model_dir / "model_int4.onnx"
+    p8 = model_dir / "model_int8.onnx"
+    return (p4.is_file() and p4.stat().st_size > 10_000_000) or (p8.is_file() and p8.stat().st_size > 10_000_000)
 
 
 def download_laya_model(
@@ -130,17 +165,16 @@ class LayaONNXRuntime:
         return cls._rl_config
 
     @classmethod
-    def get_session(cls, model_name: str = DEFAULT_MODEL, device: str = "cpu"):
-        norm_key = "laya-int4" if "int4" in model_name.lower() else "laya-int8"
+    def get_session(cls, model_name: Optional[str] = None, device: str = "cpu"):
+        norm_key, model_file = resolve_model_file(model_name)
         if cls._session is not None and cls._loaded_model == norm_key:
             return cls._session
 
         import onnxruntime as ort
 
-        model_file = get_model_path(norm_key)
         if not model_file.exists():
             raise FileNotFoundError(
-                f"Laya ONNX model not found at {model_file}. Run 'guard laya download' or allow auto-download."
+                f"Laya ONNX model not found at {model_file}. Run 'guard laya download' to cache model weights."
             )
 
         available = ort.get_available_providers()
@@ -220,6 +254,22 @@ class LayaONNXRuntime:
         rl_cfg = cls.load_rl_config()
         temp_by_opts = rl_cfg.get("temperature_by_options", {})
 
+        def extract_options_and_labels(qdef: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+            qtype = qdef.get("type", "choice")
+            crit = qdef.get("criteria") or qdef.get("options")
+            if qtype == "choice":
+                if isinstance(crit, dict):
+                    return [f"{k}: {v}" for k, v in crit.items()], list(crit.keys())
+                elif isinstance(crit, list):
+                    return [str(c) for c in crit], [str(c) for c in crit]
+            elif qtype == "score":
+                if isinstance(crit, list):
+                    return [f"level {i}: {c}" for i, c in enumerate(crit)], [str(i) for i in range(len(crit))]
+                elif isinstance(crit, dict):
+                    return [f"{k}: {v}" for k, v in crit.items()], list(crit.keys())
+            # noul (yes/no)
+            return ["false: no violation", "true: modifies core authentication or database"], ["false", "true"]
+
         q_items = []
         max_seq_len = 0
         max_markers_len = 0
@@ -227,7 +277,7 @@ class LayaONNXRuntime:
         for qid, qdef in questions.items():
             qtype_str = qdef.get("type", "choice")
             instructions = qdef.get("instructions", "")
-            options = qdef.get("options", [])
+            options, labels = extract_options_and_labels(qdef)
             qtype_code = QTYPES.get(qtype_str, 0)
 
             seq, markers = cls.build_sequence(
@@ -244,6 +294,7 @@ class LayaONNXRuntime:
                 "qtype_str": qtype_str,
                 "qtype_code": qtype_code,
                 "options": options,
+                "labels": labels,
                 "seq": seq,
                 "markers": markers,
             })
@@ -284,8 +335,8 @@ class LayaONNXRuntime:
         for i, item in enumerate(q_items):
             qid = item["qid"]
             qtype_str = item["qtype_str"]
-            opts = item["options"]
-            num_opts = len(opts)
+            labels = item["labels"]
+            num_opts = len(labels)
             valid_logits = logits[i, :num_opts]
 
             # Temperature scaling for calibrated probability
@@ -299,7 +350,7 @@ class LayaONNXRuntime:
 
             best_idx = int(np.argmax(probs))
             confidence = float(probs[best_idx])
-            best_opt = opts[best_idx] if best_idx < len(opts) else ""
+            best_opt = labels[best_idx] if best_idx < len(labels) else ""
 
             answers[qid] = {
                 "choice": best_opt,

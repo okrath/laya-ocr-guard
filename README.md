@@ -104,6 +104,25 @@ pip install -e .
   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
   ```
 
+### 🧠 Laya Neural Engine Setup (Embedded ONNX)
+`guard` embeds the native **Laya System 1 Neural Engine** using ONNX Runtime and ModernBERT tokenizers. **No `pip install laya` or 2.5 GB PyTorch dependencies required!**
+
+To download and cache the quantized neural weights (~262 MB for INT4, ~554 MB for INT8):
+```bash
+# Download default INT4 weights from HuggingFace:
+guard laya download
+
+# Or download INT8 checkpoint:
+guard laya download --model laya-int8
+
+# Inspect engine status, cache directory, and hardware acceleration:
+guard laya status
+
+# Test interactive System 1 triage on a prompt:
+guard laya triage "Center checkout button and fix responsive modal CSS"
+```
+*(If weights are not yet downloaded, Guard runs its sub-1ms Zero-Overhead Reflex Matrix automatically so workflows are never blocked).*
+
 ### Optional: Install Alibaba OCR CLI
 `guard` bundles a built-in deterministic diff inspector and multi-language rules engine (0-cost). If you also want to enable the official Alibaba OCR CLI tool:
 ```bash
@@ -270,11 +289,24 @@ guard update self --check
 guard doctor
 ```
 
+### 7. Laya Neural Engine (`guard laya`)
+Manage the embedded non-autoregressive neural classification model:
+```bash
+# Check Laya cache, model paths, and device:
+guard laya status
+
+# Download neural checkpoint weights (INT4: 262MB, INT8: 554MB):
+guard laya download [--model laya-int4|laya-int8]
+
+# Run standalone System 1 triage test on a prompt:
+guard laya triage "<prompt>"
+```
+
 ---
 
 ## 🧪 Running the Test Suite
 
-The project includes an end-to-end integration and unit test suite (67+ tests):
+The project includes a comprehensive end-to-end integration and unit test suite (90+ tests):
 ```bash
 pytest
 ```

@@ -161,4 +161,27 @@ guard doctor [options]
 * `-q, --quarantine-days <float>`: Cooling period in days (default: 3.0 days).
 
 ---
+
+## 9. `guard laya`
+
+Manages the embedded Laya ONNX Native Neural Decision Engine.
+
+```bash
+# Check model caching status, hardware acceleration, and paths:
+guard laya status
+
+# Download quantized weights from HuggingFace (INT4 ~262MB, INT8 ~554MB):
+guard laya download [--model <laya-int4|laya-int8>] [--force]
+
+# Run interactive System 1 triage classification test on a prompt:
+guard laya triage "<prompt>"
+```
+
+### Options for `guard laya download`:
+* `-m, --model <laya-int4|laya-int8>`: Model checkpoint to download (default: `laya-int4`, 262MB single-file).
+* `-f, --force`: Re-download weights even if already cached.
+
+> 💡 **Zero-Dependency Fallback:** If weights are not yet downloaded, Guard runs its sub-1ms Zero-Overhead Reflex Matrix automatically so workflows are never blocked.
+
+---
 *Created and maintained by [@okrath](https://github.com/okrath) &mdash; Source code available at [github.com/okrath/laya-ocr-guard](https://github.com/okrath/laya-ocr-guard).*
