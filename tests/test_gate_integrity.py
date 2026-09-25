@@ -344,3 +344,12 @@ def test_new_invariants_file_is_self_checked_on_post(tmp_path):
     checks = {c.id: c.status for c in SessionManager(repo).load_local_session().post.invariant_result.checks}
     assert checks["OK (new guard.invariants.json, self-check)"] == "passed"
     assert checks["BROKEN (new guard.invariants.json, self-check)"] == "failed"
+
+
+def test_escape_heuristic_ignores_identifiers_named_escape():
+    inv = [{"id": "FE-INV-02", "description": "Keep Escape and Enter keyboard navigation working."}]
+    engine = LayaEngine()
+    ident = engine.evaluate_invariants(inv, "-function formatInline(escapedText: string) {\n-  return escapeHtml(x);\n", [])
+    assert ident.checks[0].status == "passed"
+    for removed in ["-  if (e.key === 'Escape') close();", "-  window.addEventListener('keydown', onKey);"]:
+        assert engine.evaluate_invariants(inv, removed, []).checks[0].status == "failed"

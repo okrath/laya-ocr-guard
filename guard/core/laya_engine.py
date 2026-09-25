@@ -58,6 +58,10 @@ class LayaTriageResult(BaseModel):
     reasoning: str = ""
 
 
+# Removed lines that indicate a keyboard handler: key events or Escape key comparisons
+KEY_HANDLER_REGEX = re.compile(r"""\bkey(?:down|up|press)\b|\bonKey(?:Down|Up)\b|['"`]Esc(?:ape)?['"`]|\bkeyCode\s*={2,3}\s*27\b""")
+
+
 class InvariantCheck(BaseModel):
     id: str
     description: str
@@ -307,7 +311,8 @@ class LayaEngine:
                 status, note = STATUS_UNVERIFIED, "No automated check applies (manual verification required)"
                 if "escape" in desc_lower:
                     status, note = STATUS_PASSED, "No keyboard/escape handler removed in diff"
-                    if any("keydown" in l.lower() or ("escape" in l.lower() and "escapehtml" not in l.lower()) for l in removed_lines):
+                    # Key-handling signals only; identifiers such as escapeHtml / escapedText are not handlers
+                    if any(KEY_HANDLER_REGEX.search(l) for l in removed_lines):
                         status, note = STATUS_FAILED, "Detected removal of keyboard/escape handler in diff"
                 elif "disabled" in desc_lower:
                     status, note = STATUS_PASSED, "No disabled state removed in diff"
