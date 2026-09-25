@@ -68,7 +68,7 @@ M ├──────────────┼──────────
 - **Dependency Bloat Prevention (`LAZY-001`)**: Detects adding redundant npm or Python packages (`is-odd`, `uuid`, `mkdirp`, `rimraf`, `pathlib2`, `mock`) when native browser/Node or Python stdlib suffices.
 - **Premature Abstraction Prevention (`LAZY-002`)**: Flags single-use interfaces, over-engineered class hierarchies, and trivial pass-through wrapper functions.
 - **Wheel Reinvention Prevention (`LAZY-003`)**: Warns against re-implementing common utilities (`clamp`, `slugify`, `is_empty`, `flatten`, `deep_clone`) when stdlib or 1-liners suffice.
-- **Net Negative LOC Bonus**: Awards score bonuses and honors technical debt reduction when code deletion exceeds code addition.
+- **Net LOC (informational)**: The report shows net lines added or removed. Deleting code earns no score bonus; removals are instead checked for live references (`DEAD-REF`).
 
 ---
 

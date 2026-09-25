@@ -12,11 +12,13 @@ The architecture strictly decouples reflexive, deterministic, and generative res
 
 | Component | Nature | Execution Latency | Token Cost | Core Responsibility |
 | :--- | :--- | :--- | :--- | :--- |
-| **Laya** (System 1 Engine) | Non-autoregressive Transformer Classifier / Heuristic Matrix | Sub-30ms (Neural) / <1ms (Reflex) | **0 tokens ($0.00)** | Instant intent triage, platform domain routing, risk scoring (1–4), and post-task invariant verification. |
+| **Laya** (System 1 Engine) | Non-autoregressive Transformer Classifier / Heuristic Matrix | Sub-30ms (Neural) / <1ms (Reflex) | **0 tokens ($0.00)** | Instant intent triage, domain hint and risk scoring (1–4). The domain used for invariants comes from the repository files; invariants are verified by deterministic checks, not by Laya. |
 | **Alibaba Open Code Review (OCR)** | Deterministic AST & Git Diff Inspector | Sub-50ms (Local) | **0 tokens ($0.00)** | Precise git diff measurement, blast-radius enforcement (out-of-scope breach detection), and multi-language deterministic static rules. |
 | **Hygiene Engine** | AST & Reference Reachability Scanner | <50ms (Diff) / <2s (Full) | **0 tokens ($0.00)** | Two-tier dead code detection: catches orphan/draft files (DEAD-001), commented-out code blocks (DEAD-002), and AST unreferenced symbols/imports (DEAD-003). |
-| **Simplicity Engine** | KISS/YAGNI & Dependency Bloat Scanner | <30ms (Diff) / <2s (Full) | **0 tokens ($0.00)** | Enforces the Ponytail Necessity Ladder: catches redundant packages (LAZY-001), premature abstractions (LAZY-002), wheel reinventions (LAZY-003), and rewards Net Negative LOC. |
-| **Your Configured LLM** | Autoregressive Model (Claude, GPT, DeepSeek, Ollama) | 2–60 seconds | User standard pricing | Contract extraction during pre-task and **Final Safety Gatekeeper** auditing technical architecture, memory leaks, and UX ergonomics. |
+| **Simplicity Engine** | KISS/YAGNI & Dependency Bloat Scanner | <30ms (Diff) / <2s (Full) | **0 tokens ($0.00)** | Enforces the Ponytail Necessity Ladder: catches redundant packages (LAZY-001), premature abstractions (LAZY-002) and wheel reinventions (LAZY-003). Net LOC is reported, never scored. |
+| **Project Invariants** | Regex checks from `guard.invariants.json` | <100ms | **0 tokens ($0.00)** | Project rules evaluated on the current files at pre (baseline) and post. Rules without checks are `UNVERIFIED`; removing or relaxing a rule raises `INV-WEAKENED`. |
+| **Removal Reference Check** | Whole-repository search | <1s | **0 tokens ($0.00)** | Removed string keys, exports and CSS classes that are still referenced raise `DEAD-REF`; the summary is passed to the LLM as verified evidence. |
+| **Your Configured LLM** | Autoregressive Model (Claude, GPT, DeepSeek, Ollama) | Up to 180 s per diff part | User standard pricing | **Final Safety Gatekeeper**. Large diffs are reviewed in parts (one REVISE rejects the whole diff). It may propose new invariants, which guard writes only after they pass on the current code. If the LLM does not answer, the report says "Heuristic Gate" and records why. |
 
 ---
 
@@ -42,7 +44,7 @@ The architecture strictly decouples reflexive, deterministic, and generative res
 │ • Static Rulebook: Detect Secrets, SQLi, Memory Leaks, NPE  │
 │ • Hygiene Engine: Orphan files, commented code, dead symbols│
 │ • Project Health Check: Automated compile & test execution  │
-│ • Laya Scoring (0-cost): Score invariant compliance (Yes/No)│
+│ • Invariant checks (0-cost): guard.invariants.json rules    │
 │ ➔ Compiles: "### 🧪 POST-TASK VERIFICATION"                 │
 └─────────────────────────────────────────────────────────────┘
                            │
@@ -50,7 +52,7 @@ The architecture strictly decouples reflexive, deterministic, and generative res
 ┌─────────────────────────────────────────────────────────────┐
 │ 3. FINAL SAFETY GATE: YOUR CONFIGURED LLM                   │
 │ (Claude-3.7-Sonnet / GPT-4o / DeepSeek / Ollama...)         │
-│ • Reviews the aggregated post-task verification report      │
+│ • Reviews the report, verified evidence & batched diff      │
 │ • Technical Audit (Architecture, Memory Leaks, Scope)       │
 │ • Cross-Platform UX/UI & Ergonomics Assessment              │
 │ • Verdict: [APPROVED] or [REVISE] with Actionable Remediation│
@@ -65,7 +67,7 @@ The architecture strictly decouples reflexive, deterministic, and generative res
 AI Coding Agents (`omp`, Claude Code, Cursor, Windsurf, Aider) automatically ingest `CLAUDE.md` and `AGENT.md` at the start of every session. The directives mandate executing `guard pre` prior to editing and `guard post` upon task completion.
 
 ### Layer 2: Git Hook Defense (`.git/hooks/pre-commit`)
-If an agent fails to run the post-task check or makes out-of-scope edits, the Git `pre-commit` hook intercepts `git commit`, executes the full verification pipeline, and automatically aborts the commit if compilation fails, invariants are broken, or the LLM rejects the change.
+The Git `pre-commit` hook runs `guard post --hook` on every commit. Without a guard session it skips. With an unfinished or rejected session it runs the full verification pipeline and aborts the commit on failure. With an approved session it passes only when every changed file matches the approved content fingerprints, so later or unrelated edits cannot ride on an old approval. Repository-local hooks (including in linked worktrees) still run first.
 ### Layer 3: Process Harness Wrapper (`guard run`)
 For external CI/CD pipelines or headless scripts, `guard run "<prompt>" -- <command>` enforces the complete sandwich sequence as a single atomic process.
 

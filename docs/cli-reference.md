@@ -19,6 +19,11 @@ guard pre "<prompt>" [options]
 ### Options:
 * `-r, --repo <path>`: Target repository directory (default: current directory).
 * `-q, --quick`: Quick triage mode (skips deep file scanning, runs fast reflex classification only).
+* `-s, --scope <path|dir|glob>` (repeatable): Declare the files the task may change. Files named in the prompt are added automatically; globs are accepted only here. On Windows prefer a directory (`--scope src/ui`) over a quoted glob.
+* `--allow-dirty`: Start although files are already modified. They are snapshotted (`git stash create`, working tree untouched) and reported as pre-existing; post reviews only the edits made after pre.
+* `--force`: Restart an unfinished or rejected session. The restart keeps its baseline, snapshot, base commit and scope, is listed in the reports, and scope added by it fails as `SCOPE-004`.
+
+Pre refuses to start on a dirty tree (without `--allow-dirty`) and over an unfinished or rejected session (without `--force`).
 
 ---
 
@@ -34,6 +39,9 @@ guard post [options]
 * `-r, --repo <path>`: Target repository directory.
 * `-f, --focus <area>`: Quality pillar to focus scrutiny on (`all`, `security`, `memory`, `performance`, `ux`, `dead-code`, `simplicity`). Default: `all`.
 * `--auto-fix`: Trigger self-healing remediation suggestions if verification fails.
+* `--hook`: Git-hook mode. Skips when the repository has no guard session; with an approved session, passes only when the changes match what was approved.
+
+Post audits against the base commit recorded at pre, runs the build command, invariant checks and the removed-symbol reference check, then asks the LLM. A new or edited `guard.invariants.json` is self-checked on the current tree, and rules the LLM discovers are written into it after validation.
 
 ---
 
@@ -45,9 +53,11 @@ Executes the automated Sandwich Pattern around any command.
 guard run "<prompt>" -- <command...>
 ```
 
+Accepts the same pre-task options: `--scope`, `--allow-dirty`, `--force`.
+
 ### Example:
 ```bash
-guard run "Add customer discount calculation" -- git status
+guard run "Add customer discount calculation" --scope src/pricing -- git status
 ```
 
 ---
@@ -117,7 +127,9 @@ guard hook uninstall [--mode <git|agent|all>] [--global]
 ### Options for `guard hook install`:
 * `-r, --repo <path>`: Target repository or workspace directory.
 * `-m, --mode <git|agent|all>`: Installation mode (`git`, `agent`, `all`).
-* `-s, --stealth`: Shortcut for `--mode git` (zero workspace files, Git hooks only).
+* `-s, --stealth`: Shortcut for `--mode git` (Git hooks only, no `CLAUDE.md`/`AGENT.md`).
+
+Every install mode creates `guard.invariants.json` when it is missing (see `guard invariants init`) and never overwrites an existing one.
 * `-g, --global`: Configure Git hooks globally for all repositories via `git config --global core.hooksPath ~/.guard/hooks`.
 * `--all-repos`: Automatically install Git hooks into all discovered child Git repositories in workspace mode.
 * `--select-repos <indices|names>`: Comma-separated list of child repo numbers (e.g. `2,3,7,8`) or folder names.
@@ -125,7 +137,31 @@ guard hook uninstall [--mode <git|agent|all>] [--global]
 > 🔒 **Strict Safe-Append Policy:** Guard NEVER overwrites existing user `CLAUDE.md` or `AGENT.md` files. It creates a `.guard.bak` backup and cleanly appends Guard protocol markers.
 ---
 
-## 7. `guard update`
+## 7. `guard invariants`
+
+Create and validate the project's `guard.invariants.json` (kept in the root directory of each guarded repository).
+
+```bash
+# Create the file; imports numbered items under an "Invariants" (or Vietnamese "Bất biến") heading of AGENT.md / AGENTS.md / CLAUDE.md:
+guard invariants init
+
+# Evaluate every check on the current code, without a session (exit 1: a check fails, exit 2: file missing or invalid):
+guard invariants check
+```
+
+---
+
+## 8. `guard reset`
+
+Close the current guard session, for example after its work was committed or abandoned. The session is archived to `.guard/history/<session_id>.json`.
+
+```bash
+guard reset
+```
+
+---
+
+## 9. `guard update`
 
 Safely updates Alibaba OCR respecting the 3-day supply-chain quarantine cooling period.
 
@@ -148,7 +184,7 @@ guard update self --check
 
 ---
 
-## 8. `guard doctor`
+## 10. `guard doctor`
 
 Runs comprehensive system environment diagnostics and audits latest releases for both Laya-OCR-Guard CLI (GitHub) and Alibaba OCR (npm).
 
@@ -162,7 +198,7 @@ guard doctor [options]
 
 ---
 
-## 9. `guard laya`
+## 11. `guard laya`
 
 Manages the embedded Laya ONNX Native Neural Decision Engine.
 

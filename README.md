@@ -33,7 +33,7 @@ Automates and enforces the rigorous **Impact & Regression Protocol** pioneered i
 > Just like a crisp Vietnamese Bánh Mì, `guard` sandwiches code modifications between two protective crusts:
 > * **Top Crust (`guard pre`):** Fast reflex triage, invariant locking & domain contract extraction.
 > * **Core Filling (Developer / AI Agent edits):** Safe, scoped code implementation within contract boundaries.
-> * **Bottom Crust (`guard post`):** Deterministic diff blast-radius audit, OCR static rulebook, test suite, and LLM Gatekeeper approval.
+> * **Bottom Crust (`guard post`):** Deterministic diff blast-radius audit, OCR static rulebook, project build/test command, `guard.invariants.json` checks, and LLM Gatekeeper approval.
 
 ```text
                [User Task / Issue Prompt]
@@ -55,7 +55,7 @@ Automates and enforces the rigorous **Impact & Regression Protocol** pioneered i
 │ • Static Rulebook: Detect Secrets, SQLi, Memory Leaks, NPE  │
 │ • Hygiene Engine (0-cost): Detects orphan files & dead code │
 │ • Project Health Check: Automated compile & test execution  │
-│ • Laya Scoring (0-cost): Score invariant compliance (Yes/No)│
+│ • Invariant checks (0-cost): guard.invariants.json rules    │
 │ ➔ Compiles: "### 🧪 POST-TASK VERIFICATION"                 │
 └─────────────────────────────────────────────────────────────┘
                            │
@@ -63,7 +63,7 @@ Automates and enforces the rigorous **Impact & Regression Protocol** pioneered i
 ┌─────────────────────────────────────────────────────────────┐
 │ 3. FINAL SAFETY GATE: YOUR CONFIGURED LLM                   │
 │ (Claude-3.7-Sonnet / GPT-4o / DeepSeek / Ollama...)         │
-│ • Reviews the aggregated post-task verification report      │
+│ • Reviews the report, verified evidence & batched diff      │
 │ • Technical Audit (Architecture, Memory Leaks, Scope)       │
 │ • Cross-Platform UX/UI & Ergonomics Assessment              │
 │ • Verdict: [APPROVED] or [REVISE] with Actionable Remediation│
@@ -191,7 +191,7 @@ AI coding agents tend to be hyperactive—installing heavy libraries for trivial
 | **`LAZY-001`** | `HIGH` | **Dependency Bloat** | Redundant npm/pip packages (`is-odd`, `uuid`, `mkdirp`, `rimraf`, `pathlib2`, `mock`) when native APIs or stdlib suffice. |
 | **`LAZY-002`** | `MEDIUM` | **Premature Abstraction** | Single-use interfaces, trivial pass-through wrapper functions, and over-engineered class hierarchies. |
 | **`LAZY-003`** | `MEDIUM` | **Wheel Reinvention** | Re-implementing common utilities (`clamp`, `slugify`, `is_empty`, `flatten`, `deep_clone`) when stdlib or 1-liners suffice. |
-| **`NET-LOC`** | ⭐ **Bonus** | **Debt Reduction** | Awards a score bonus when a PR/commit deletes more code than it adds (`net negative LOC`). |
+| **`NET-LOC`** | ℹ️ **Info** | **Change Size** | Reports net lines added or removed. It is informational only: deleting code earns no score bonus. |
 
 ---
 
@@ -244,7 +244,13 @@ Gate rules that keep the pre-task gate meaningful:
 - Paths come from `git status --porcelain -z`, so renamed files and names with spaces or Vietnamese characters are tracked correctly. Globs are accepted only via `--scope`: prose such as "do not edit *.css" never widens scope.
 
 #### Project invariants (`guard.invariants.json`)
-Commit a `guard.invariants.json` at the repository root to replace the generic domain templates:
+Each guarded repository keeps its own `guard.invariants.json` in its root directory, committed with the code. It turns the rules an agent is told to respect (for example the invariant section of `AGENT.md`) into checks guard runs on every task, replacing the generic domain templates.
+
+```bash
+guard invariants init    # create the file; imports numbered items under an "Invariants" / "Bất biến" heading of AGENT.md / AGENTS.md / CLAUDE.md
+guard invariants check   # evaluate every check on the current code, no session needed (exit 1 = a check fails, 2 = file missing/invalid)
+```
+`guard hook install` creates the file too (in every mode) and never overwrites an existing one. Imported entries start without checks (`UNVERIFIED`) until you add them:
 ```json
 {"invariants": [
   {"id": "CHAT-01", "description": "Chat requests never time out",
@@ -253,6 +259,10 @@ Commit a `guard.invariants.json` at the repository root to replace the generic d
 ]}
 ```
 Every check runs on the current file contents. `forbid` fails when any matched file contains the regex, and `require` fails when none of them does. A check whose `files` glob matches nothing also fails, and so does an invalid regex. A malformed `guard.invariants.json` makes `guard pre` stop with the parse error. Invariants without checks are reported as `UNVERIFIED` (manual) and never counted as passed. A check that was already failing when pre ran is reported as `BASELINE_FAILED` (a warning), so an old defect does not block unrelated tasks; a check that starts failing during the task blocks approval. When a task adds or edits `guard.invariants.json`, post also self-checks the new file on the current tree (`... (new guard.invariants.json, self-check)`), so a rule that fails on the code it was written for blocks approval. This repository's own gate-integrity invariants live in [`guard.invariants.json`](guard.invariants.json).
+
+**Rules learned during review.** The LLM gate may propose durable rules it notices in the diff (`INVARIANTS:` section of its answer). Guard writes a proposal into `guard.invariants.json` only when its id and description are new and its check passes on the current code; it is tagged `"origin": "llm:<session>"`, listed under "Invariants learned in this review", and enforced from the next `guard pre`. The additions are part of the approved change, so they are committed with the task. Rejected proposals are listed with the reason.
+
+**The rulebook cannot be weakened as a side effect.** Adding invariants never counts as out of scope. Removing an invariant or changing its checks raises `INV-WEAKENED`: CRITICAL (blocks) unless the task declares `guard.invariants.json` in its scope, in which case it is HIGH and left to the reviewer.
 
 ### 3. Post-Task Phase (`guard post`)
 Execute after code modifications are complete:
@@ -333,7 +343,7 @@ guard laya triage "<prompt>"
 
 ## 🧪 Running the Test Suite
 
-The project includes a comprehensive end-to-end integration and unit test suite (90+ tests):
+The project includes a comprehensive end-to-end integration and unit test suite (120+ tests):
 ```bash
 pytest
 ```
