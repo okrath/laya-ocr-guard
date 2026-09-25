@@ -92,7 +92,7 @@ pip install -e .
 npm install -g @alibaba-group/open-code-review
 ```
 
-Kiểm tra sức khỏe hệ thống:
+Kiểm tra sức khỏe hệ thống & rà soát cập nhật an toàn:
 ```bash
 guard doctor
 ```
@@ -171,11 +171,27 @@ guard run "Thêm endpoint tính phí vận chuyển" -- git status
 guard review
 ```
 
+### 6. Quản Lý Nâng Cấp An Toàn & Chống Backdoor (`guard update`)
+Guard kiểm soát thời gian cách ly (Quarantine Period 3 ngày) đối với các bản phát hành npm của Alibaba OCR:
+```bash
+# Kiểm tra phiên bản mới mà không cài đặt:
+guard update --check
+
+# Nâng cấp Alibaba OCR an toàn (tự động chặn nếu bản mới ra mắt < 3 ngày):
+guard update
+
+# Nâng cấp cưỡng chế (bỏ qua cảnh báo cách ly):
+guard update --force
+
+# Tự động cập nhật chính Guard CLI từ GitHub:
+guard update self
+```
+
 ---
 
 ## 🧪 Chạy Test Suite
 
-Dự án sở hữu bộ test toàn diện 36 tests bao phủ từ Unit tests đến End-to-End integration tests:
+Dự án sở hữu bộ test toàn diện bao phủ từ Unit tests đến End-to-End integration tests:
 
 ```bash
 pytest

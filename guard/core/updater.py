@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional, Tuple
@@ -153,3 +154,47 @@ def check_ocr_update(quarantine_days: float = 3.0, timeout: float = 4.0) -> Vers
             status=UpdateSecurityStatus.CHECK_FAILED,
             recommendation=f"Không thể kiểm tra npm ({str(e)[:60]})",
         )
+
+
+def perform_ocr_upgrade(force: bool = False, quarantine_days: float = 3.0) -> Tuple[bool, str]:
+    """
+    Safely upgrades Alibaba OCR via npm if quarantine check passes or --force is specified.
+    """
+    check = check_ocr_update(quarantine_days=quarantine_days)
+    if check.status == UpdateSecurityStatus.UP_TO_DATE:
+        return True, f"Alibaba OCR đã ở phiên bản mới nhất ({check.installed_version or 'latest'}). Không cần cập nhật."
+
+    if check.status == UpdateSecurityStatus.QUARANTINE_HOLD and not force:
+        return False, (
+            f"🛡️ CÁCH LY BẢO MẬT: v{check.latest_version} mới ra mắt {check.age_days:.1f} ngày (< {quarantine_days:.0f} ngày).\n"
+            f"Để phòng ngừa backdoor và tấn công chuỗi cung ứng npm, Guard CHẶN nâng cấp tự động.\n"
+            f"💡 Nếu bạn vẫn muốn bỏ qua cảnh báo bảo mật, hãy dùng: guard update --force"
+        )
+
+    npm_bin = shutil.which("npm")
+    if not npm_bin:
+        return False, "Không tìm thấy lệnh 'npm' trong PATH. Hãy cài đặt Node.js/npm trước."
+
+    pkg_spec = f"@alibaba-group/open-code-review@{check.latest_version}" if check.latest_version else "@alibaba-group/open-code-review@latest"
+    try:
+        proc = subprocess.run([npm_bin, "install", "-g", pkg_spec], capture_output=True, text=True, timeout=120)
+        if proc.returncode == 0:
+            new_ver = get_installed_ocr_version() or check.latest_version or "latest"
+            return True, f"✅ Đã nâng cấp thành công Alibaba OCR lên phiên bản v{new_ver}!"
+        return False, f"npm install thất bại (exit code {proc.returncode}): {proc.stderr or proc.stdout}"
+    except Exception as e:
+        return False, f"Lỗi khi chạy npm install: {str(e)}"
+
+
+def perform_self_upgrade() -> Tuple[bool, str]:
+    """
+    Upgrades laya-ocr-guard itself from GitHub using pip.
+    """
+    pip_cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "git+https://github.com/okrath/laya-ocr-guard.git"]
+    try:
+        proc = subprocess.run(pip_cmd, capture_output=True, text=True, timeout=120)
+        if proc.returncode == 0:
+            return True, "✅ Đã nâng cấp thành công Laya-OCR-Guard từ GitHub repository!"
+        return False, f"pip upgrade thất bại: {proc.stderr or proc.stdout}"
+    except Exception as e:
+        return False, f"Lỗi khi nâng cấp guard: {str(e)}"

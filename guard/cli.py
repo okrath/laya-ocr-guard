@@ -7,6 +7,7 @@ Provides:
 - `guard hook` [install | uninstall | status]: Bind hooks to target repos
 - `guard run "<prompt>" -- <cmd>`: Sandwich pattern wrapper
 - `guard doctor`: System diagnostic check & supply-chain update quarantine audit
+- `guard update` [ocr | self]: Safe upgrades respecting 3-day quarantine policy
 - `guard review`: Final Safety Gate Review by the configured LLM
 """
 
@@ -39,7 +40,7 @@ from guard.core.session import (
     SessionManager,
     SessionStatus,
 )
-from guard.core.updater import UpdateSecurityStatus, check_ocr_update
+from guard.core.updater import UpdateSecurityStatus, check_ocr_update, perform_ocr_upgrade, perform_self_upgrade
 from guard.domains.detector import (
     detect_build_command,
     detect_repo_domain,
@@ -473,6 +474,46 @@ def muse_alias_cmd(
 ):
     """Alias for `guard review`."""
     review_cmd(repo=repo)
+
+
+@app.command("update")
+def update_cmd(
+    target: str = typer.Argument("ocr", help="Update target: 'ocr' (Alibaba OCR) or 'self' (Laya-OCR-Guard)"),
+    check_only: bool = typer.Option(False, "--check", "-c", help="Check for available updates without installing"),
+    force: bool = typer.Option(False, "--force", "-f", help="Bypass the 3-day supply-chain quarantine cooling period"),
+    quarantine_days: float = typer.Option(3.0, "--quarantine-days", "-q", help="Quarantine cooling period in days"),
+):
+    """
+    Safely update Alibaba OCR (with 3-day supply-chain quarantine) or Guard CLI itself.
+    """
+    if target.lower() in ["self", "guard"]:
+        console.print("[cyan]Upgrading Laya-OCR-Guard CLI from GitHub...[/cyan]")
+        success, msg = perform_self_upgrade()
+        if success:
+            console.print(f"[bold green]{msg}[/bold green]")
+        else:
+            console.print(f"[bold red]{msg}[/bold red]")
+            raise typer.Exit(code=1)
+        return
+
+    # Default target: ocr
+    console.print(f"[cyan]Kiểm tra bản cập nhật cho Alibaba OCR (@alibaba-group/open-code-review)...[/cyan]")
+    check_res = check_ocr_update(quarantine_days=quarantine_days)
+
+    if check_only:
+        console.print(f"Phiên bản cài đặt: {check_res.installed_version or '(chưa cài)'}")
+        console.print(f"Phiên bản mới nhất: v{check_res.latest_version or 'N/A'}")
+        console.print(f"Trạng thái: [bold]{check_res.status.value}[/bold]")
+        console.print(f"Khuyến nghị: {check_res.recommendation}")
+        return
+
+    success, msg = perform_ocr_upgrade(force=force, quarantine_days=quarantine_days)
+    if success:
+        console.print(f"[bold green]{msg}[/bold green]")
+    else:
+        console.print(f"[bold yellow]{msg}[/bold yellow]")
+        if not force and "CÁCH LY" in msg:
+            raise typer.Exit(code=1)
 
 
 @app.command("doctor")

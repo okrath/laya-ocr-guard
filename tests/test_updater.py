@@ -7,9 +7,12 @@ import pytest
 
 from guard.core.updater import (
     UpdateSecurityStatus,
+    VersionCheckResult,
     check_ocr_update,
     is_version_newer,
     parse_version_tuple,
+    perform_ocr_upgrade,
+    perform_self_upgrade,
 )
 
 
@@ -72,3 +75,39 @@ def test_ocr_update_up_to_date():
          patch("guard.core.updater.get_installed_ocr_version", return_value="1.12.9"):
         res = check_ocr_update(quarantine_days=3.0)
         assert res.status == UpdateSecurityStatus.UP_TO_DATE
+
+
+def test_perform_ocr_upgrade_blocked_by_quarantine():
+    mock_check = VersionCheckResult(
+        package_name="@alibaba-group/open-code-review",
+        registry="npm",
+        installed_version="1.12.9",
+        latest_version="1.13.0",
+        age_days=1.2,
+        status=UpdateSecurityStatus.QUARANTINE_HOLD,
+        recommendation="Quarantine active",
+    )
+    with patch("guard.core.updater.check_ocr_update", return_value=mock_check):
+        success, msg = perform_ocr_upgrade(force=False, quarantine_days=3.0)
+        assert success is False
+        assert "CÁCH LY BẢO MẬT" in msg
+
+
+def test_perform_ocr_upgrade_force_allowed():
+    mock_check = VersionCheckResult(
+        package_name="@alibaba-group/open-code-review",
+        registry="npm",
+        installed_version="1.12.9",
+        latest_version="1.13.0",
+        age_days=1.2,
+        status=UpdateSecurityStatus.QUARANTINE_HOLD,
+        recommendation="Quarantine active",
+    )
+    mock_proc = MagicMock()
+    mock_proc.returncode = 0
+    with patch("guard.core.updater.check_ocr_update", return_value=mock_check), \
+         patch("shutil.which", return_value="npm"), \
+         patch("subprocess.run", return_value=mock_proc):
+        success, msg = perform_ocr_upgrade(force=True, quarantine_days=3.0)
+        assert success is True
+        assert "Đã nâng cấp thành công" in msg
