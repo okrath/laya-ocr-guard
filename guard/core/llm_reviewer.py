@@ -6,6 +6,7 @@ to act as the Senior Architect & Code Reviewer:
 2. Evaluates Technical Soundness (architectural integrity, memory leaks, security, out-of-scope files)
 3. Evaluates Ergonomics & UX/UI Polish
 4. Issues Final Score (0-10) and Verdict: APPROVED or REVISE with Actionable Remediation.
+Supports selective focus mode: `security`, `memory`, `performance`, `ux`, `all`.
 
 If no LLM API key is configured, falls back to deterministic local heuristic evaluation.
 """
@@ -39,6 +40,7 @@ class LLMReviewVerdict(BaseModel):
     score: float = Field(ge=0.0, le=10.0)
     summary: str
     reviewer_model: str = "Local Deterministic Engine"
+    focus_area: str = "all"
     technical_audit: List[str] = Field(default_factory=list)
     ergonomics_ux: List[str] = Field(default_factory=list)
     remediation_steps: List[str] = Field(default_factory=list)
@@ -68,8 +70,10 @@ class LLMReviewerEngine:
         contracts: Optional[List[DomainContract]] = None,
         invariants: Optional[List[LockedInvariant]] = None,
         use_llm: bool = True,
+        focus: Optional[str] = "all",
     ) -> LLMReviewVerdict:
         violations = violations or []
+        focus_str = (focus or "all").lower()
 
         # 1. Deterministic Heuristic Scoring (Safety baseline)
         heuristic_verdict = self._evaluate_heuristics(
@@ -77,6 +81,7 @@ class LLMReviewerEngine:
             diff_summary=diff_summary,
             violations=violations,
             invariant_result=invariant_result,
+            focus=focus_str,
         )
 
         # If hard blockers triggered (build failed, invariant broken, secret leaked), reject immediately
@@ -94,6 +99,7 @@ class LLMReviewerEngine:
                     violations=violations,
                     invariant_result=invariant_result,
                     contracts=contracts,
+                    focus=focus_str,
                 )
                 if llm_verdict:
                     return llm_verdict
@@ -108,6 +114,7 @@ class LLMReviewerEngine:
         diff_summary: Optional[DiffSummary],
         violations: List[RuleViolation],
         invariant_result: Optional[LayaInvariantResult],
+        focus: str = "all",
     ) -> LLMReviewVerdict:
         score = 10.0
         tech_notes: List[str] = []
@@ -174,6 +181,7 @@ class LLMReviewerEngine:
             score=score,
             summary=summary,
             reviewer_model=model_name,
+            focus_area=focus,
             technical_audit=tech_notes,
             ergonomics_ux=ux_notes,
             remediation_steps=remediation,
@@ -189,6 +197,7 @@ class LLMReviewerEngine:
         violations: List[RuleViolation],
         invariant_result: Optional[LayaInvariantResult],
         contracts: Optional[List[DomainContract]],
+        focus: str = "all",
     ) -> Optional[LLMReviewVerdict]:
         if not self.config or not self.config.llm:
             return None
@@ -196,8 +205,21 @@ class LLMReviewerEngine:
         model_name = self.config.llm.model
         domain_str = domain.value if hasattr(domain, "value") else str(domain)
 
+        focus_instruction = ""
+        if focus == "security":
+            focus_instruction = "CRITICAL FOCUS ON SECURITY: Rigorously audit for hardcoded secrets, injection (SQLi, XSS, Command), CSRF, insecure endpoints, and auth bypass."
+        elif focus == "memory":
+            focus_instruction = "CRITICAL FOCUS ON MEMORY SAFETY: Rigorously audit for dangling event listeners, unclosed streams/sockets/db connections, retained closures, and DOM leaks."
+        elif focus == "performance":
+            focus_instruction = "CRITICAL FOCUS ON PERFORMANCE & LATENCY: Rigorously audit for blocking synchronous I/O, N+1 query patterns, excessive re-renders, and thread lockups."
+        elif focus == "ux":
+            focus_instruction = "CRITICAL FOCUS ON ERGONOMICS & UX: Rigorously audit for broken keyboard shortcuts, modal backdrop handling, viewport responsiveness, and visual state feedback."
+        else:
+            focus_instruction = "FULL 360-DEGREE AUDIT: Evaluate across all 5 Quality Pillars (Security, Memory Safety, Performance, Data Integrity, Ergonomics/UX)."
+
         system_prompt = (
             f"You are the Senior Lead Architect and Code Reviewer acting as the final safety gate (using model {model_name}).\n"
+            f"Review Directive: {focus_instruction}\n"
             "Your task is to audit the post-task verification report and git diff produced by an AI coding agent.\n"
             "Evaluate across 3 pillars:\n"
             "1. Technical Audit (Code integrity, memory leaks, dangling listeners, breaking API changes, security vulnerabilities)\n"
@@ -214,6 +236,7 @@ class LLMReviewerEngine:
 
         user_content = f"""
 Domain: {domain_str}
+Review Focus: {focus.upper()}
 Task Prompt: {prompt}
 Build Status: {'PASS' if build_check and build_check.passed else 'UNKNOWN / NOT RUN'}
 Rule Violations: {len(violations)} issues
@@ -232,9 +255,9 @@ Git Diff:
             max_tokens=1000,
         )
 
-        return self._parse_llm_response(raw_response, model_name=model_name)
+        return self._parse_llm_response(raw_response, model_name=model_name, focus=focus)
 
-    def _parse_llm_response(self, text: str, model_name: str = "LLM") -> Optional[LLMReviewVerdict]:
+    def _parse_llm_response(self, text: str, model_name: str = "LLM", focus: str = "all") -> Optional[LLMReviewVerdict]:
         try:
             score_match = re.search(r"SCORE:\s*([\d\.]+)", text)
             score = float(score_match.group(1)) if score_match else 8.0
@@ -257,6 +280,7 @@ Git Diff:
                 score=score,
                 summary=summary,
                 reviewer_model=model_name,
+                focus_area=focus,
                 technical_audit=tech_items,
                 ergonomics_ux=ergo_items,
                 remediation_steps=remed_items,

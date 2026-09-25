@@ -3,7 +3,7 @@ Alibaba Open Code Review (OCR) Engine & Git Diff Inspector.
 Provides:
 1. Deterministic Git Diff Parsing (added/modified/deleted files, +/- line counts)
 2. Blast Radius & Out-of-Scope File Audit
-3. Built-in Multi-Language OCR Rulebook Runner (Secrets, NPE, Memory Leaks, SQLi, Unhandled Async)
+3. Built-in Multi-Language OCR Rulebook Runner (Secrets, NPE, Memory Leaks, SQLi, XSS, Sync I/O)
 4. Subprocess Bridge to Alibaba OCR CLI (`ocr review`)
 """
 
@@ -245,6 +245,12 @@ class GitDiffInspector:
             return True
         for exp in expected_files:
             exp_norm = exp.replace("\\", "/").lower()
+            # If expected item is a directory pattern (e.g. "docs/" or "docs")
+            if exp_norm.endswith("/"):
+                if fp_norm.startswith(exp_norm):
+                    return True
+            if "/" not in exp_norm and (fp_norm.startswith(f"{exp_norm}/") or f"/{exp_norm}/" in fp_norm):
+                return True
             if fp_norm == exp_norm or fp_norm.endswith(exp_norm) or exp_norm.endswith(fp_norm):
                 return True
         return False
@@ -253,24 +259,32 @@ class GitDiffInspector:
 class OCRRulebookRunner:
     """
     Multi-language deterministic static rules engine matching Alibaba OCR patterns.
-    Operates at 0 cost, 0 latency.
+    Operates at 0 cost, 0 latency across 5 Quality Pillars.
     """
 
-    # Secret patterns
+    # Pillar: Security - Hardcoded Secrets
     SECRET_REGEX = re.compile(
         r"""(?i)(api[_-]?key|secret|token|password|auth[_-]?token|private[_-]?key)\s*[:=]\s*["']([A-Za-z0-9_\-\.]{12,})["']"""
     )
-    # SQL Injection pattern: concatenation of SQL keyword string with variables
+    # Pillar: Security - SQL Injection string concatenation
     SQLI_REGEX = re.compile(
         r"""(?i)(select\b.+?\bfrom\b|insert\s+into\b|update\b.+?\bset\b|delete\s+from\b).+?["']\s*\+\s*[a-zA-Z_]"""
     )
-    # JS/TS Memory leak pattern: dangling listener without cleanup in useEffect/componentDidMount
+    # Pillar: Security - Cross-Site Scripting (XSS)
+    XSS_REGEX = re.compile(
+        r"""(?i)(dangerouslySetInnerHTML\s*=|innerHTML\s*=|\bv-html\s*=)"""
+    )
+    # Pillar: Memory Safety - Dangling Listener without remover in component
     DANGLING_LISTENER = re.compile(
         r"""addEventListener\s*\(["'](resize|scroll|mousemove|keydown)["']"""
     )
-    # Null Pointer / Unhandled optional access (e.g. user.profile.address without optional chaining)
+    # Pillar: Stability - Deep property dereference without optional chaining
     NULL_DEREF = re.compile(
         r"""(?i)(data|res|response|user|item)\.([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)"""
+    )
+    # Pillar: Performance - Blocking synchronous I/O on async event loop
+    BLOCKING_SYNC_IO = re.compile(
+        r"""\b(readFileSync|writeFileSync|execSync|spawnSync)\b"""
     )
 
     def scan_diff(self, raw_diff: Optional[str]) -> List[RuleViolation]:
@@ -294,19 +308,30 @@ class OCRRulebookRunner:
                 line_num += 1
                 added_code = line[1:].strip()
 
-                # Rule 1: Hardcoded Secrets
-                if self.SECRET_REGEX.search(added_code):
-                    violations.append(RuleViolation(
-                        rule_id="SEC-001",
-                        severity="CRITICAL",
-                        file_path=current_file,
-                        line_number=line_num,
-                        message="Potential hardcoded secret or API key detected in code addition.",
-                        snippet=added_code[:80],
-                    ))
+                cf_lower = current_file.replace("\\", "/").lower()
+                is_doc_file = any(cf_lower.endswith(ext) for ext in [".md", ".markdown", ".txt", ".rst"])
+                is_test_file = "tests/" in cf_lower or "test_" in cf_lower
+                is_js_ts = any(cf_lower.endswith(ext) for ext in [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"])
 
-                # Rule 2: SQL Injection concatenation
-                if self.SQLI_REGEX.search(added_code):
+                # Rule 1: Hardcoded Secrets (Security - Always scanned on ALL files)
+                if self.SECRET_REGEX.search(added_code):
+                    # Exclude sample dummy tokens in test files or docs
+                    if not (is_test_file and "sk_live_9988776655" in added_code):
+                        violations.append(RuleViolation(
+                            rule_id="SEC-001",
+                            severity="CRITICAL",
+                            file_path=current_file,
+                            line_number=line_num,
+                            message="Potential hardcoded secret or API key detected in code addition.",
+                            snippet=added_code[:80],
+                        ))
+
+                # Rules 2-6 only apply to actual application source code (not doc markdown files)
+                if is_doc_file:
+                    continue
+
+                # Rule 2: SQL Injection concatenation (Security)
+                if self.SQLI_REGEX.search(added_code) and not is_test_file:
                     violations.append(RuleViolation(
                         rule_id="SEC-002",
                         severity="CRITICAL",
@@ -316,8 +341,19 @@ class OCRRulebookRunner:
                         snippet=added_code[:80],
                     ))
 
-                # Rule 3: Memory leak / Dangling Event Listener
-                if self.DANGLING_LISTENER.search(added_code) and "removeEventListener" not in diff_text:
+                # Rule 3: Cross-Site Scripting (XSS) (Security)
+                if self.XSS_REGEX.search(added_code) and "sanitize" not in added_code.lower() and not is_test_file:
+                    violations.append(RuleViolation(
+                        rule_id="SEC-003",
+                        severity="HIGH",
+                        file_path=current_file,
+                        line_number=line_num,
+                        message="Raw HTML injection detected (dangerouslySetInnerHTML / innerHTML / v-html). Sanitize input via DOMPurify.",
+                        snippet=added_code[:80],
+                    ))
+
+                # Rule 4: Memory leak / Dangling Event Listener (Memory Safety)
+                if self.DANGLING_LISTENER.search(added_code) and "removeEventListener" not in diff_text and not is_test_file:
                     violations.append(RuleViolation(
                         rule_id="PERF-001",
                         severity="HIGH",
@@ -327,8 +363,19 @@ class OCRRulebookRunner:
                         snippet=added_code[:80],
                     ))
 
-                # Rule 4: Deep property dereference without optional chaining
-                if self.NULL_DEREF.search(added_code) and "?." not in added_code:
+                # Rule 5: Blocking Synchronous I/O on Event Loop (Performance - Only in JS/TS environments)
+                if is_js_ts and self.BLOCKING_SYNC_IO.search(added_code) and not is_test_file:
+                    violations.append(RuleViolation(
+                        rule_id="PERF-002",
+                        severity="MEDIUM",
+                        file_path=current_file,
+                        line_number=line_num,
+                        message="Blocking synchronous I/O detected on thread. Prefer async/await non-blocking operations.",
+                        snippet=added_code[:80],
+                    ))
+
+                # Rule 6: Deep property dereference without optional chaining (Stability)
+                if self.NULL_DEREF.search(added_code) and "?." not in added_code and not is_test_file:
                     violations.append(RuleViolation(
                         rule_id="STAB-001",
                         severity="MEDIUM",

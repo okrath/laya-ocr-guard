@@ -1,5 +1,5 @@
 """
-Unit tests for OCR Engine and Git Diff Inspector.
+Unit tests for OCR Engine and Git Diff Inspector across Quality Pillars.
 """
 
 from pathlib import Path
@@ -61,6 +61,34 @@ def test_rulebook_sqli_detection():
     assert sqli_violation is not None
     assert sqli_violation.severity == "CRITICAL"
     assert "orderId" in sqli_violation.snippet
+
+
+def test_rulebook_xss_detection():
+    diff = """diff --git a/src/Post.tsx b/src/Post.tsx
+--- a/src/Post.tsx
++++ b/src/Post.tsx
+@@ -10,2 +10,3 @@
++ return <div dangerouslySetInnerHTML={{ __html: userBio }} />;
+"""
+    runner = OCRRulebookRunner()
+    violations = runner.scan_diff(diff)
+    xss_violation = next((v for v in violations if v.rule_id == "SEC-003"), None)
+    assert xss_violation is not None
+    assert xss_violation.severity == "HIGH"
+
+
+def test_rulebook_blocking_sync_io():
+    diff = """diff --git a/src/server.ts b/src/server.ts
+--- a/src/server.ts
++++ b/src/server.ts
+@@ -10,2 +10,3 @@
++ const data = fs.readFileSync("/etc/passwd");
+"""
+    runner = OCRRulebookRunner()
+    violations = runner.scan_diff(diff)
+    io_violation = next((v for v in violations if v.rule_id == "PERF-002"), None)
+    assert io_violation is not None
+    assert io_violation.severity == "MEDIUM"
 
 
 def test_rulebook_dangling_listener():

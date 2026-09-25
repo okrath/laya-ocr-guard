@@ -2,13 +2,13 @@
 Complete CLI for Laya-OCR-Guard (`guard`).
 Provides:
 - `guard pre "<prompt>"`: Triage, Baseline Contracts, Invariants, Pre-task Note
-- `guard post [--auto-fix]`: Diff Audit, Build Check, OCR Rules, Laya Invariants, LLM Final Gate Verdict
+- `guard post [--auto-fix] [--focus]`: Diff Audit, Build Check, OCR Rules, Laya Invariants, LLM Final Gate Verdict
 - `guard config` [show | llm | test | sync]: Manage LLM and OCR credentials
 - `guard hook` [install | uninstall | status]: Bind hooks and AI Agent directives to target repos
 - `guard run "<prompt>" -- <cmd>`: Sandwich pattern wrapper
 - `guard doctor`: System diagnostic check & supply-chain update quarantine audit
 - `guard update` [ocr | self]: Safe upgrades respecting 3-day quarantine policy
-- `guard review`: Final Safety Gate Review by the configured LLM
+- `guard review [--focus]`: Final Safety Gate Review by the configured LLM
 """
 
 from __future__ import annotations
@@ -133,7 +133,7 @@ def execute_pre_task(prompt: str, repo_path: Optional[Path] = None, quick: bool 
     return True
 
 
-def execute_post_task(repo_path: Optional[Path] = None, auto_fix: bool = False) -> bool:
+def execute_post_task(repo_path: Optional[Path] = None, auto_fix: bool = False, focus: str = "all") -> bool:
     target_repo = Path(repo_path or Path.cwd()).resolve()
     config = load_config(target_repo)
     session_mgr = SessionManager(target_repo)
@@ -209,6 +209,7 @@ def execute_post_task(repo_path: Optional[Path] = None, auto_fix: bool = False) 
         invariant_result=inv_eval,
         contracts=session.pre.existing_contracts if session and session.pre else None,
         use_llm=bool(config.llm and config.llm.api_key),
+        focus=focus,
     )
 
     all_passed = (review_verdict.verdict == ReviewVerdict.APPROVED)
@@ -271,11 +272,12 @@ def pre_cmd(
 def post_cmd(
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
     auto_fix: bool = typer.Option(False, "--auto-fix", help="Trigger self-healing suggestions"),
+    focus: str = typer.Option("all", "--focus", "-f", help="Quality pillar focus: 'all', 'security', 'memory', 'performance', 'ux'"),
 ):
     """
     Run Post-Task Guard: diff audit, build checks, invariant scoring & LLM final verification.
     """
-    passed = execute_post_task(repo_path=Path(repo) if repo else None, auto_fix=auto_fix)
+    passed = execute_post_task(repo_path=Path(repo) if repo else None, auto_fix=auto_fix, focus=focus)
     if not passed:
         raise typer.Exit(code=1)
 
@@ -434,6 +436,7 @@ def hook_status_cmd(
 @app.command("review")
 def review_cmd(
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
+    focus: str = typer.Option("all", "--focus", "-f", help="Quality pillar focus: 'all', 'security', 'memory', 'performance', 'ux'"),
 ):
     """
     Run Final Safety Review on current Git diff using the configured LLM.
@@ -465,11 +468,13 @@ def review_cmd(
         domain=dom_type,
         diff_summary=summary,
         violations=violations,
+        focus=focus,
     )
 
     badge_color = "green" if verdict.verdict == ReviewVerdict.APPROVED else "red"
+    focus_label = f" | Focus: {verdict.focus_area.upper()}" if verdict.focus_area != "all" else ""
     console.print(Panel(
-        f"[bold]{verdict.verdict.value}[/bold] (Model: {verdict.reviewer_model}, Score: {verdict.score:.1f}/10)\n{verdict.summary}",
+        f"[bold]{verdict.verdict.value}[/bold] (Model: {verdict.reviewer_model}{focus_label}, Score: {verdict.score:.1f}/10)\n{verdict.summary}",
         title="🤖 LLM Code Review & Approval",
         border_style=badge_color,
     ))
@@ -478,9 +483,10 @@ def review_cmd(
 @app.command("muse", hidden=True)
 def muse_alias_cmd(
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
+    focus: str = typer.Option("all", "--focus", "-f", help="Quality pillar focus: 'all', 'security', 'memory', 'performance', 'ux'"),
 ):
     """Alias for `guard review`."""
-    review_cmd(repo=repo)
+    review_cmd(repo=repo, focus=focus)
 
 
 @app.command("update")

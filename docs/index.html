@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Laya-OCR-Guard | Documentation & User Guide</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-muted: #8b949e;
+      --heading: #f0f6fc;
+      --accent: #58a6ff;
+      --accent-green: #3fb950;
+      --accent-yellow: #d29922;
+      --accent-red: #f85149;
+      --sidebar-width: 280px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      display: flex;
+    }
+    #sidebar {
+      width: var(--sidebar-width);
+      height: 100vh;
+      position: sticky;
+      top: 0;
+      background: var(--card-bg);
+      border-right: 1px solid var(--border);
+      padding: 24px 16px;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+    #sidebar h2 {
+      font-size: 1.1rem;
+      color: var(--heading);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #sidebar ul { list-style: none; }
+    #sidebar li { margin-bottom: 8px; }
+    #sidebar a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      display: block;
+      padding: 6px 10px;
+      border-radius: 6px;
+      transition: all 0.15s ease;
+    }
+    #sidebar a:hover {
+      color: var(--heading);
+      background: rgba(88, 166, 255, 0.1);
+    }
+    #content {
+      flex: 1;
+      padding: 40px 60px;
+      max-width: 960px;
+      overflow-x: hidden;
+    }
+    h1, h2, h3, h4 { color: var(--heading); margin-top: 32px; margin-bottom: 16px; font-weight: 600; }
+    h1 { font-size: 2.2rem; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-top: 0; }
+    h2 { font-size: 1.5rem; border-bottom: 1px solid rgba(48, 54, 61, 0.5); padding-bottom: 8px; }
+    p, ul, ol { margin-bottom: 16px; }
+    ul, ol { padding-left: 24px; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      background: rgba(110, 118, 129, 0.2);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.85em;
+    }
+    pre {
+      background: #090d13;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      margin-bottom: 20px;
+    }
+    pre code { background: transparent; padding: 0; }
+    .badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 12px;
+      text-transform: uppercase;
+    }
+    .badge-blue { background: rgba(88, 166, 255, 0.15); color: var(--accent); border: 1px solid rgba(88, 166, 255, 0.3); }
+    .badge-green { background: rgba(63, 185, 80, 0.15); color: var(--accent-green); border: 1px solid rgba(63, 185, 80, 0.3); }
+    .badge-yellow { background: rgba(210, 153, 34, 0.15); color: var(--accent-yellow); border: 1px solid rgba(210, 153, 34, 0.3); }
+    .badge-red { background: rgba(248, 81, 73, 0.15); color: var(--accent-red); border: 1px solid rgba(248, 81, 73, 0.3); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 24px;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+    th { background: var(--card-bg); color: var(--heading); }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 768px) {
+      body { flex-direction: column; }
+      #sidebar { width: 100%; height: auto; position: static; border-right: none; border-bottom: 1px solid var(--border); }
+      #content { padding: 24px 16px; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav id="sidebar">
+    <h2>🛡️ Laya-OCR-Guard</h2>
+    <ul>
+      <li><a href="#overview">Overview & Vision</a></li>
+      <li><a href="#three-pillars">Three-Pillar Architecture</a></li>
+      <li><a href="#quality-matrix">2D Quality Matrix</a></li>
+      <li><a href="#installation">Installation Guide</a></li>
+      <li><a href="#llm-setup">LLM Configuration</a></li>
+      <li><a href="#agent-automation">Automated Agent Directives</a></li>
+      <li><a href="#cli-reference">CLI Command Reference</a></li>
+      <li><a href="#supply-chain">Supply-Chain Security</a></li>
+    </ul>
+  </nav>
+
+  <main id="content">
+    <h1>🛡️ Laya-OCR-Guard Documentation</h1>
+    <p>
+      <strong>Dual-Gate Impact Analysis & Regression Guard for AI-Assisted Development.</strong><br>
+      A zero-token, high-velocity safety harness wrapping AI coding agents (Claude Code, Cursor, Windsurf, Aider, omp) to prevent regressions, security leaks, memory leaks, and breaking changes.
+    </p>
+
+    <section id="overview">
+      <h2>1. Overview & Vision</h2>
+      <p>
+        Coding agents are fast, but they can be careless: they accidentally delete keyboard shortcuts, drop responsive CSS classes, leak API tokens, or make out-of-scope modifications across untouched files.
+      </p>
+      <p>
+        <code>guard</code> enforces a deterministic <strong>Sandwich Pattern</strong> around every task:
+      </p>
+      <div class="card">
+        <strong>Before code is touched (Pre-Task):</strong> Laya provides sub-30ms reflex triage to classify the domain, assess risk, extract existing baseline contracts, and lock critical invariants.<br><br>
+        <strong>After code is written (Post-Task):</strong> Alibaba Open Code Review (OCR) measures the exact diff blast radius and scans static rulebooks, the project test suite verifies compilation, Laya scores invariant preservation, and <strong>your configured LLM</strong> issues the final authoritative verdict (<code>APPROVED</code> or <code>REVISE</code>).
+      </div>
+    </section>
+
+    <section id="three-pillars">
+      <h2>2. Three-Pillar Architecture</h2>
+      <pre><code>               [User Task / Issue Prompt]
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 1. PRE-TASK PHASE: `guard pre "&lt;prompt&gt;"`                   │
+│ • Laya (&lt;30ms, 0-cost): Intent, domain &amp; risk triage        │
+│ • Domain Contract Extractor (FE / BE / Infra / MB)          │
+│ • Lock Invariant Rules (Must NOT be broken)                 │
+│ ➔ Emits: "### 🔍 PRE-TASK IMPACT NOTE"                      │
+└─────────────────────────────────────────────────────────────┘
+                           │
+                           ▼ (AI Coding Agent / Developer modifies code)
+                           │
+┌─────────────────────────────────────────────────────────────┐
+│ 2. POST-TASK PHASE: `guard post`                            │
+│ • OCR Inspector (0-cost): Diff audit &amp; blast radius check   │
+│ • Static Rulebook: Detect Secrets, SQLi, Memory Leaks, NPE  │
+│ • Project Health Check: Automated compile &amp; test execution  │
+│ • Laya Scoring (0-cost): Score invariant compliance (Yes/No)│
+│ ➔ Compiles: "### 🧪 POST-TASK VERIFICATION"                 │
+└─────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 3. FINAL SAFETY GATE: YOUR CONFIGURED LLM                   │
+│ (Claude-3.7-Sonnet / GPT-4o / DeepSeek / Ollama...)         │
+│ • Reviews the aggregated post-task verification report      │
+│ • Technical Audit (Architecture, Memory Leaks, Scope)       │
+│ • Cross-Platform UX/UI &amp; Ergonomics Assessment              │
+│ • Verdict: [APPROVED] or [REVISE] with Actionable Remediation│
+└─────────────────────────────────────────────────────────────┘</code></pre>
+    </section>
+
+    <section id="quality-matrix">
+      <h2>3. 2D Quality Matrix: Platform Domains × Quality Pillars</h2>
+      <p>
+        Instead of only checking syntax, Guard evaluates code across a two-dimensional matrix combining <strong>4 Platform Domains</strong> and <strong>5 Cross-Cutting Quality Pillars</strong>.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Platform Domain</th>
+            <th>🛡️ Security</th>
+            <th>🧠 Memory Safety</th>
+            <th>⚡ Performance</th>
+            <th>🧱 Integrity &amp; Schema</th>
+            <th>♿ UX &amp; Ergonomics</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Frontend</strong> (React, Vue, Tailwind)</td>
+            <td>XSS prevention, CSP, token leaks</td>
+            <td>Dangling listeners, detached DOM</td>
+            <td>Blocking sync I/O, re-render lag</td>
+            <td>UI states (loading, disabled)</td>
+            <td>Escape key, backdrop, mobile view</td>
+          </tr>
+          <tr>
+            <td><strong>Backend</strong> (Go, Python, Rust, Nest)</td>
+            <td>SQL injection, Auth middleware, RBAC</td>
+            <td>Connection leaks, unclosed streams</td>
+            <td>N+1 queries, async blocking</td>
+            <td>JSON Schema compatibility, ACID</td>
+            <td>Standardized error codes &amp; status</td>
+          </tr>
+          <tr>
+            <td><strong>Infra / DevOps</strong> (Docker, K8s, Terraform)</td>
+            <td>Forbid 0.0.0.0, no hardcoded secrets</td>
+            <td>Container OOM limits, quotas</td>
+            <td>Fast startup, lightweight images</td>
+            <td>Zero-downtime rolling updates</td>
+            <td>Liveness &amp; readiness probe health</td>
+          </tr>
+          <tr>
+            <td><strong>Mobile</strong> (Flutter, React Native, Swift)</td>
+            <td>Runtime permissions check, keychain</td>
+            <td>Unreleased Bitmaps, retained controllers</td>
+            <td>Smooth 60/120 FPS, battery efficiency</td>
+            <td>Offline cache synchronization</td>
+            <td>SafeArea boundaries, dynamic notch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Focused Deep-Dives (<code>--focus</code>)</h3>
+      <p>
+        By default, all 5 quality pillars are audited at 100% rigor. When investigating specific defects, use the <code>--focus</code> flag to direct the LLM gate's analytical scrutiny:
+      </p>
+      <pre><code># Scrutinize memory leaks (listeners, unclosed handles):
+guard review --focus memory
+
+# Scrutinize security vulnerabilities (SQLi, XSS, secrets):
+guard review --focus security
+
+# Scrutinize performance (blocking I/O, heavy operations):
+guard review --focus performance
+
+# Scrutinize ergonomics and responsive UX:
+guard review --focus ux</code></pre>
+    </section>
+
+    <section id="installation">
+      <h2>4. Installation Guide (Cross-Platform)</h2>
+      <p>Works natively on Windows, Linux, and macOS:</p>
+      <pre><code># Recommended: Install globally via pipx (Linux/macOS)
+pipx install git+https://github.com/okrath/laya-ocr-guard.git
+
+# Or with standard pip (Windows / Linux / macOS)
+pip install git+https://github.com/okrath/laya-ocr-guard.git
+
+# Verify installation health
+guard doctor</code></pre>
+    </section>
+
+    <section id="llm-setup">
+      <h2>5. LLM Setup Wizard &amp; Auto-Sync</h2>
+      <p>
+        Run the interactive step-by-step wizard to configure your preferred LLM provider. Settings automatically synchronize to Alibaba OCR CLI:
+      </p>
+      <pre><code>guard config llm</code></pre>
+      <ul>
+        <li><strong>OpenAI / OpenAI-Compatible:</strong> OpenAI (<code>gpt-4o</code>), DeepSeek (<code>deepseek-chat</code>), Ollama (<code>http://localhost:11434/v1</code>), OpenRouter, or Local Gateways (<code>http://127.0.0.1:8090/v1</code>).</li>
+        <li><strong>Anthropic:</strong> Claude API (<code>claude-3-7-sonnet</code>).</li>
+      </ul>
+      <p>Test your connection with an instant sub-second verification ping:</p>
+      <pre><code>guard config test</code></pre>
+    </section>
+
+    <section id="agent-automation">
+      <h2>6. Automated Agent Directives (omp, Claude Code, Cursor)</h2>
+      <p>
+        To protect any target repository, navigate to the repo root and execute:
+      </p>
+      <pre><code>guard hook install</code></pre>
+      <p>This automatically provisions three defense layers:</p>
+      <ol>
+        <li><strong>Agent Directives (<code>CLAUDE.md</code> &amp; <code>AGENT.md</code>):</strong> Injects mandatory protocol directives so agents automatically run <code>guard pre</code> before editing, and <code>guard post</code> after completing edits.</li>
+        <li><strong>Git Hook Enforcement:</strong> Installs a <code>pre-commit</code> hook that automatically runs <code>guard post</code> and aborts commits if tests fail or invariants are violated.</li>
+        <li><strong>Harness Wrapper:</strong> Generates <code>.guard/bin/guard-exec</code> for external CI/CD integrations.</li>
+      </ol>
+      <p>Check hook and agent directive status at any time:</p>
+      <pre><code>guard hook status</code></pre>
+    </section>
+
+    <section id="cli-reference">
+      <h2>7. CLI Command Reference</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Command</th>
+            <th>Description</th>
+            <th>Common Flags</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>guard pre "&lt;prompt&gt;"</code></td>
+            <td>Run Pre-Task Guard: fast triage, baseline contracts &amp; locked invariants</td>
+            <td><code>--quick</code>, <code>--repo &lt;path&gt;</code></td>
+          </tr>
+          <tr>
+            <td><code>guard post</code></td>
+            <td>Run Post-Task Guard: diff audit, build test, invariants, LLM final gate</td>
+            <td><code>--focus &lt;area&gt;</code>, <code>--auto-fix</code></td>
+          </tr>
+          <tr>
+            <td><code>guard run "&lt;prompt&gt;" -- &lt;cmd&gt;</code></td>
+            <td>Execute Sandwich Pattern: pre ➔ command ➔ post</td>
+            <td><code>--auto-fix</code></td>
+          </tr>
+          <tr>
+            <td><code>guard review</code></td>
+            <td>Perform on-demand LLM Code Review on current git diff</td>
+            <td><code>--focus &lt;area&gt;</code></td>
+          </tr>
+          <tr>
+            <td><code>guard config llm</code></td>
+            <td>Launch interactive LLM configuration wizard</td>
+            <td><code>--local</code></td>
+          </tr>
+          <tr>
+            <td><code>guard config test</code></td>
+            <td>Send instant token-free ping test to configured LLM</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>guard hook install</code></td>
+            <td>Install Git hooks and CLAUDE.md/AGENT.md directives</td>
+            <td><code>--mode &lt;git|agent|all&gt;</code></td>
+          </tr>
+          <tr>
+            <td><code>guard update</code></td>
+            <td>Safely upgrade Alibaba OCR respecting 3-day quarantine</td>
+            <td><code>--check</code>, <code>--force</code>, <code>self</code></td>
+          </tr>
+          <tr>
+            <td><code>guard doctor</code></td>
+            <td>Check system environment health and supply-chain security</td>
+            <td><code>--no-updates</code>, <code>-q &lt;days&gt;</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="supply-chain">
+      <h2>8. Supply-Chain Security &amp; Quarantine Policy</h2>
+      <p>
+        To protect development environments against zero-day npm supply-chain backdoors, Guard enforces a <strong>3-Day Quarantine Cooling Period</strong> on Alibaba OCR releases:
+      </p>
+      <ul>
+        <li>New releases published <strong>&lt; 3 days ago</strong> are placed on <span class="badge badge-red">QUARANTINE HOLD</span> to allow security researchers time to detect malicious insertions.</li>
+        <li>Releases published <strong>≥ 3 days ago</strong> are marked <span class="badge badge-blue">SAFE UPDATE</span>.</li>
+      </ul>
+      <pre><code># Check update status safely without installing:
+guard update --check
+
+# Safely upgrade (automatically halts if release is under quarantine):
+guard update
+
+# Bypass quarantine hold explicitly if verified:
+guard update --force</code></pre>
+    </section>
+
+    <footer style="margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.85rem;">
+      Laya-OCR-Guard is open-source under the Apache-2.0 License. Built for production-grade AI-assisted software engineering.
+    </footer>
+  </main>
+
+</body>
+</html>
