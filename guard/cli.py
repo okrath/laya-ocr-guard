@@ -34,6 +34,7 @@ from guard.core.laya_engine import DomainType, LayaEngine
 from guard.core.hygiene_engine import HygieneEngine
 from guard.core.llm_reviewer import LLMReviewerEngine, ReviewVerdict
 from guard.core.ocr_engine import GitDiffInspector, OCRRulebookRunner, RuleViolation
+from guard.core.removal_check import check_removed_symbols
 from guard.core.project_invariants import INVARIANTS_FILENAME, InvariantsFileError, load_project_invariants
 from guard.core.simplicity_engine import SimplicityEngine
 from guard.core.session import BuildCheckResult, PostTaskRecord, SessionManager, SessionStatus
@@ -340,6 +341,11 @@ def execute_post_task(
             ),
         ))
 
+    # Removals a compiler cannot see (string keys, exports, CSS classes) checked over the whole repo
+    removal_violations, removal_summary = check_removed_symbols(target_repo, task_diff)
+    violations.extend(removal_violations)
+    evidence = [removal_summary] if removal_summary else []
+
     hygiene = HygieneEngine(target_repo)
     if (focus or "").lower() in ("dead-code", "hygiene"):
         touched = [f.path for f in diff_summary.files]
@@ -442,6 +448,7 @@ def execute_post_task(
         contracts=pre.existing_contracts if pre else None,
         use_llm=True,
         focus=focus,
+        evidence=evidence,
     )
 
     all_passed = (review_verdict.verdict == ReviewVerdict.APPROVED)

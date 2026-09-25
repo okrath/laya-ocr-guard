@@ -353,3 +353,21 @@ def test_escape_heuristic_ignores_identifiers_named_escape():
     assert ident.checks[0].status == "passed"
     for removed in ["-  if (e.key === 'Escape') close();", "-  window.addEventListener('keydown', onKey);"]:
         assert engine.evaluate_invariants(inv, removed, []).checks[0].status == "failed"
+
+
+def test_removed_symbols_still_referenced_are_reported(tmp_path):
+    repo = make_repo(tmp_path)
+    (repo / "src" / "icons.ts").write_text(
+        "export function icon(n: string) {\n  switch (n) {\n    case 'edit':\n      return 'e';\n    case 'gone':\n      return 'g';\n  }\n}\n", encoding="utf-8")
+    (repo / "src" / "style.css").write_text(".btn-live { color: red; }\n.btn-dead { color: blue; }\n", encoding="utf-8")
+    (repo / "src" / "use.ts").write_text("icon('edit'); el.className = 'btn-live';\n", encoding="utf-8")
+    git(repo, "add", "."); git(repo, "commit", "-m", "base")
+    assert execute_pre_task("Remove dead icons and css", repo_path=repo, scope=["src"]) is True
+
+    (repo / "src" / "icons.ts").write_text(
+        "export function icon(n: string) {\n  switch (n) {\n  }\n}\n", encoding="utf-8")  # removes 'edit' (used) and 'gone' (dead)
+    (repo / "src" / "style.css").write_text(".btn-live { color: red; }\n", encoding="utf-8")  # removes .btn-dead only
+    execute_post_task(repo_path=repo)
+    post = SessionManager(repo).load_local_session().post
+    dead_refs = [v.message for v in post.rule_violations if v.rule_id == "DEAD-REF"]
+    assert len(dead_refs) == 1 and "`edit`" in dead_refs[0] and "src/use.ts:1" in dead_refs[0]

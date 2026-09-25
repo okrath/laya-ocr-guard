@@ -68,6 +68,7 @@ class LLMReviewerEngine:
         invariants: Optional[List[LockedInvariant]] = None,
         use_llm: bool = True,
         focus: Optional[str] = "all",
+        evidence: Optional[List[str]] = None,
     ) -> LLMReviewVerdict:
         violations = violations or []
         focus_str = (focus or "all").lower()
@@ -98,6 +99,7 @@ class LLMReviewerEngine:
                     invariant_result=invariant_result,
                     contracts=contracts,
                     focus=focus_str,
+                    evidence=evidence or [],
                 )
                 if llm_verdict:
                     return llm_verdict
@@ -235,6 +237,7 @@ class LLMReviewerEngine:
         invariant_result: Optional[LayaInvariantResult],
         contracts: Optional[List[DomainContract]],
         focus: str = "all",
+        evidence: Optional[List[str]] = None,
     ) -> Optional[LLMReviewVerdict]:
         if not self.config or not self.config.llm:
             return None
@@ -290,6 +293,7 @@ class LLMReviewerEngine:
         invariants_info = "\n".join(
             f"- [{c.status.upper()}] {c.id}: {c.description} ({c.notes})" for c in (invariant_result.checks if invariant_result else [])
         ) or "- none declared"
+        evidence_info = "\n".join(f"- {e}" for e in (evidence or [])) or "- none"
 
         header = f"""
 Domain: {domain_str}
@@ -302,6 +306,8 @@ Out of Scope Files: {diff_summary.out_of_scope_files if diff_summary else []}
 All Touched Files: {files_summary}
 Invariants:
 {invariants_info}
+Verified evidence (computed by guard over the whole repository, valid for every diff part):
+{evidence_info}
 """
 
         # llm.timeout is tuned for `guard config test` pings; a full diff review needs far longer
