@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%" fill="none">
+  <defs>
+    <!-- Golden Crust Top Gradient -->
+    <linearGradient id="crust-top" x1="24" y1="44" x2="176" y2="94" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE68A"/>
+      <stop offset="25%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#92400E"/>
+    </linearGradient>
+
+    <!-- Golden Crust Bottom Gradient -->
+    <linearGradient id="crust-bottom" x1="28" y1="108" x2="172" y2="148" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#D97706"/>
+      <stop offset="50%" stop-color="#B45309"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+
+    <!-- Safe Filling Layer (Cucumber & Mint Code Core) -->
+    <linearGradient id="filling-mint" x1="36" y1="98" x2="164" y2="110" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#34D399"/>
+      <stop offset="50%" stop-color="#10B981"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+
+    <!-- Chili Pepper Slice (Locked Invariants Badge) -->
+    <linearGradient id="chili-slice" x1="90" y1="96" x2="110" y2="112" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F87171"/>
+      <stop offset="100%" stop-color="#DC2626"/>
+    </linearGradient>
+
+    <!-- Soft Depth Ambient Shadow -->
+    <radialGradient id="amb-shadow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#000000" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Ambient Ground Shadow -->
+  <ellipse cx="100" cy="166" rx="64" ry="12" fill="url(#amb-shadow)"/>
+
+  <!-- Bottom Crust Half: Post-Task Gate (guard post) -->
+  <path d="M28 108 C28 108 50 148 100 148 C150 148 172 108 172 108 C160 120 135 130 100 130 C65 130 40 120 28 108 Z" 
+        fill="url(#crust-bottom)"/>
+
+  <!-- Safe Code Filling Layer: Verification & Invariant Core -->
+  <rect x="36" y="98" width="128" height="12" rx="6" fill="url(#filling-mint)"/>
+  
+  <!-- Red Chili Pepper: Invariant Lock Anchor -->
+  <polygon points="94,98 108,98 104,110 90,110" fill="url(#chili-slice)"/>
+
+  <!-- Binary Token Sesame Seeds -->
+  <circle cx="56" cy="104" r="2" fill="#FFFFFF"/>
+  <circle cx="72" cy="104" r="2" fill="#FFFFFF"/>
+  <circle cx="126" cy="104" r="2" fill="#FFFFFF"/>
+  <circle cx="144" cy="104" r="2" fill="#FFFFFF"/>
+
+  <!-- Top Crust Half: Pre-Task Gate (guard pre) -->
+  <path d="M24 94 C24 64 54 44 100 44 C146 44 176 64 176 94 C155 88 128 84 100 84 C72 84 45 88 24 94 Z" 
+        fill="url(#crust-top)"/>
+
+  <!-- Top Baguette Scoring Cuts: The Three Pillars (Laya, OCR, LLM) -->
+  <!-- Cut 1: Laya Reflex (Electric Cyan) -->
+  <path d="M58 54 C66 52 74 64 78 74 C72 74 64 64 58 54 Z" fill="#FEF3C7"/>
+  <path d="M60 56 L76 72" stroke="#38BDF8" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Cut 2: Alibaba OCR Diff Audit (Golden Amber) -->
+  <path d="M90 48 C98 46 106 58 110 72 C104 72 96 60 90 48 Z" fill="#FEF3C7"/>
+  <path d="M92 50 L108 70" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Cut 3: Final LLM Gatekeeper (Emerald Green) -->
+  <path d="M122 54 C130 52 138 64 142 74 C136 74 128 64 122 54 Z" fill="#FEF3C7"/>
+  <path d="M124 56 L140 72" stroke="#34D399" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Crust Glaze Highlight -->
+  <path d="M40 78 C65 60 135 60 160 78" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-opacity="0.32"/>
+</svg>

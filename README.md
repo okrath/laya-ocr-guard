@@ -1,5 +1,13 @@
 # Laya OCR Guard (`guard`)
 
+<p align="center">
+  <img src="docs/assets/logo.svg" width="160" height="160" alt="Laya OCR Guard Logo - The Bánh Mì Sandwich Pattern">
+  <br>
+  <strong>Dual-Gate Impact Analysis & Regression Guard for AI-Assisted Development</strong>
+  <br>
+  <em>Enforcing the Sandwich Pattern with sub-30ms triage, deterministic diff auditing, and LLM gatekeeping.</em>
+</p>
+
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Documentation](https://img.shields.io/badge/docs-live_website-brightgreen.svg)](https://okrath.github.io/laya-ocr-guard/)
@@ -20,6 +28,12 @@ Automates and enforces the rigorous **Impact & Regression Protocol** pioneered i
 ---
 
 ## 🏛️ Three-Pillar Architecture
+
+> 🥖 **The Bánh Mì Sandwich Pattern:**
+> Just like a crisp Vietnamese Bánh Mì, `guard` sandwiches code modifications between two protective crusts:
+> * **Top Crust (`guard pre`):** Fast reflex triage, invariant locking & domain contract extraction.
+> * **Core Filling (Developer / AI Agent edits):** Safe, scoped code implementation within contract boundaries.
+> * **Bottom Crust (`guard post`):** Deterministic diff blast-radius audit, OCR static rulebook, test suite, and LLM Gatekeeper approval.
 
 ```text
                [User Task / Issue Prompt]
