@@ -6,7 +6,7 @@ Provides:
 - `guard config` [show | llm | test | sync]: Manage LLM and OCR credentials
 - `guard hook` [install | uninstall | status]: Bind hooks to target repos
 - `guard run "<prompt>" -- <cmd>`: Sandwich pattern wrapper
-- `guard doctor`: System diagnostic check
+- `guard doctor`: System diagnostic check & supply-chain update quarantine audit
 - `guard review`: Final Safety Gate Review by the configured LLM
 """
 
@@ -39,6 +39,7 @@ from guard.core.session import (
     SessionManager,
     SessionStatus,
 )
+from guard.core.updater import UpdateSecurityStatus, check_laya_update, check_ocr_update
 from guard.domains.detector import (
     detect_build_command,
     detect_repo_domain,
@@ -475,12 +476,17 @@ def muse_alias_cmd(
 
 
 @app.command("doctor")
-def doctor_cmd():
+def doctor_cmd(
+    check_updates: bool = typer.Option(True, "--updates/--no-updates", help="Check PyPI and npm for updates with supply-chain quarantine"),
+    quarantine_days: float = typer.Option(3.0, "--quarantine-days", "-q", help="Cooling period in days (default 3 days) to protect against zero-day backdoors"),
+):
     """
-    Check system health: Python, Git, Node, npm, Alibaba OCR CLI, and Laya engine.
+    Check system health and audit Laya & Alibaba OCR supply-chain security updates.
     """
     console.print("[bold cyan]🩺 LAYA-OCR-GUARD SYSTEM DOCTOR[/bold cyan]\n")
-    table = Table(show_header=True, header_style="bold magenta")
+    
+    # 1. Environment Table
+    table = Table(title="💻 System Environment & Engines", show_header=True, header_style="bold magenta")
     table.add_column("Component", style="bold")
     table.add_column("Status", justify="center")
     table.add_column("Version / Details")
@@ -526,6 +532,45 @@ def doctor_cmd():
         table.add_row("Laya Fast Reflex", "⚡ Fast Mode", "Sub-1ms Heuristic Reflex Matrix Active (Zero-overhead)")
 
     console.print(table)
+
+    # 2. Supply-Chain Security & Update Quarantine Table
+    if check_updates:
+        console.print(f"\n[bold yellow]🛡️  SUPPLY-CHAIN SECURITY & UPDATE QUARANTINE (Chính sách cách ly {quarantine_days:.0f} ngày)[/bold yellow]")
+        with console.status("[cyan]Đang kiểm tra PyPI và npm registry...[/cyan]"):
+            laya_check = check_laya_update(quarantine_days=quarantine_days)
+            ocr_check = check_ocr_update(quarantine_days=quarantine_days)
+
+        sec_table = Table(show_header=True, header_style="bold cyan")
+        sec_table.add_column("Package", style="bold", width=28)
+        sec_table.add_column("Installed", width=12)
+        sec_table.add_column("Latest (Registry)", width=18)
+        sec_table.add_column("Security Status", justify="center", width=22)
+        sec_table.add_column("Khuyến nghị & Hành động")
+
+        for res in [laya_check, ocr_check]:
+            inst_str = res.installed_version or "(chưa cài)"
+            latest_str = f"v{res.latest_version}" if res.latest_version else "N/A"
+            if res.age_days is not None:
+                latest_str += f" ({res.age_days:.1f}d)"
+
+            if res.status == UpdateSecurityStatus.QUARANTINE_HOLD:
+                status_badge = "[bold white on red]🛡️ QUARANTINE HOLD[/bold white on red]"
+            elif res.status == UpdateSecurityStatus.SAFE_UPDATE_AVAILABLE:
+                status_badge = "[bold white on blue]⬆️ SAFE UPDATE[/bold white on blue]"
+            elif res.status == UpdateSecurityStatus.UP_TO_DATE:
+                status_badge = "[bold green]✅ UP TO DATE[/bold green]"
+            elif res.status == UpdateSecurityStatus.NOT_INSTALLED:
+                status_badge = "[dim]⚪ NOT INSTALLED[/dim]"
+            else:
+                status_badge = "[yellow]⚠️ CHECK FAILED[/yellow]"
+
+            sec_table.add_row(f"{res.package_name} ({res.registry})", inst_str, latest_str, status_badge, res.recommendation)
+
+        console.print(sec_table)
+        console.print(
+            f"[dim]💡 Nguyên tắc an toàn: Bản cập nhật mới phát hành < {quarantine_days:.0f} ngày sẽ tự động bị đưa vào diện "
+            "CÁCH LY BẢO MẬT để phòng ngừa backdoor & tấn công chuỗi cung ứng (Supply-chain attacks).[/dim]\n"
+        )
 
 
 def main():
