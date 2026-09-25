@@ -17,23 +17,10 @@ echo "✅ Guard Verification PASSED. Proceeding with commit."
 exit 0
 """
 
-# Git prepare-commit-msg hook: appends post-task verification summary to commit message
+# Git prepare-commit-msg hook template
 GIT_PREPARE_COMMIT_MSG_HOOK = """#!/usr/bin/env sh
 # --- LAYA-OCR-GUARD COMMIT MSG HOOK ---
-COMMIT_MSG_FILE=$1
-COMMIT_SOURCE=$2
-
-# Check local .guard, parent .guard, or global active session
-SESSION_FOUND=0
-if [ -f ".guard/session.json" ] || [ -f "../.guard/session.json" ] || [ -f "../../.guard/session.json" ] || [ -f "$HOME/.guard/sessions/active_session.json" ]; then
-  SESSION_FOUND=1
-fi
-
-# Only append if message is not an amend or merge
-if [ "$COMMIT_SOURCE" != "commit" ] && [ $SESSION_FOUND -eq 1 ]; then
-  echo "" >> "$COMMIT_MSG_FILE"
-  echo "Approved-by: Laya-OCR-Guard (LLM Gate Verification)" >> "$COMMIT_MSG_FILE"
-fi
+exit 0
 """
 
 # Agent wrapper script template (for command line harness execution)
