@@ -11,9 +11,9 @@ Safely backs up any existing user files before modification.
 from __future__ import annotations
 
 import stat
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-
 from guard.hooks.templates import (
     AGENT_DIRECTIVES_TEMPLATE,
     AGENT_WRAPPER_SCRIPT,
@@ -81,6 +81,93 @@ class HookInstaller:
             success, msgs = sub_installer.install(mode=mode)
             results[str(r)] = {"success": success, "messages": msgs}
         return results
+
+    @staticmethod
+    def get_global_hooks_dir() -> Path:
+        return Path.home() / ".guard" / "hooks"
+
+    @classmethod
+    def get_global_hooks_status(cls) -> Dict[str, Any]:
+        hooks_dir = cls.get_global_hooks_dir()
+        pre_commit = hooks_dir / "pre-commit"
+        prep_msg = hooks_dir / "prepare-commit-msg"
+
+        current_path = ""
+        try:
+            res = subprocess.run(
+                ["git", "config", "--global", "--get", "core.hooksPath"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if res.returncode == 0:
+                current_path = res.stdout.strip()
+        except Exception:
+            pass
+
+        is_active = bool(current_path and Path(current_path).resolve() == hooks_dir.resolve())
+        return {
+            "hooks_dir": str(hooks_dir),
+            "configured_path": current_path,
+            "is_active": is_active,
+            "pre_commit_exists": pre_commit.exists(),
+            "prepare_commit_msg_exists": prep_msg.exists(),
+        }
+
+    @classmethod
+    def install_global_git_hooks(cls) -> Tuple[bool, List[str]]:
+        """
+        Configure Git globally (git config --global core.hooksPath ~/.guard/hooks)
+        so that every repository on this machine is guarded automatically.
+        """
+        hooks_dir = cls.get_global_hooks_dir()
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        messages = []
+
+        pre_commit = hooks_dir / "pre-commit"
+        prep_msg = hooks_dir / "prepare-commit-msg"
+
+        pre_commit.write_text(GIT_PRE_COMMIT_HOOK, encoding="utf-8")
+        prep_msg.write_text(GIT_PREPARE_COMMIT_MSG_HOOK, encoding="utf-8")
+
+        try:
+            pre_commit.chmod(pre_commit.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            prep_msg.chmod(prep_msg.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        except Exception:
+            pass
+
+        messages.append(f"Installed global hook scripts in: {hooks_dir}")
+
+        try:
+            subprocess.run(
+                ["git", "config", "--global", "core.hooksPath", str(hooks_dir)],
+                check=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            messages.append("Configured 'git config --global core.hooksPath ~/.guard/hooks'")
+            return True, messages
+        except Exception as e:
+            messages.append(f"Failed to set git global config: {e}")
+            return False, messages
+
+    @classmethod
+    def uninstall_global_git_hooks(cls) -> Tuple[bool, List[str]]:
+        messages = []
+        try:
+            subprocess.run(
+                ["git", "config", "--global", "--unset", "core.hooksPath"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            messages.append("Unset 'git config --global core.hooksPath'")
+        except Exception:
+            pass
+        return True, messages
+
     def _ensure_git_exclude(self) -> bool:
         """
         Ensure .guard/ directory is ignored in .git/info/exclude (Stealth local ignore).

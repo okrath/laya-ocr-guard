@@ -271,3 +271,54 @@ def test_cli_hook_install_workspace_selective(tmp_path):
     assert not (repo_b / ".git" / "hooks" / "pre-commit").exists()
     # Agent directives installed at workspace root
     assert (workspace / "CLAUDE.md").exists()
+
+
+def test_global_git_hooks(monkeypatch, tmp_path):
+    from pathlib import Path
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+    git_globals = {}
+
+    def mock_run(cmd, *args, **kwargs):
+        class MockProc:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+        if "git" in cmd and "core.hooksPath" in cmd:
+            if "--get" in cmd:
+                p = git_globals.get("core.hooksPath", "")
+                proc = MockProc()
+                proc.returncode = 0 if p else 1
+                proc.stdout = p
+                return proc
+            elif "--unset" in cmd:
+                git_globals.pop("core.hooksPath", None)
+                return MockProc()
+            else:
+                idx = cmd.index("core.hooksPath")
+                git_globals["core.hooksPath"] = cmd[idx + 1]
+                return MockProc()
+        return MockProc()
+
+    import subprocess
+    monkeypatch.setattr(subprocess, "run", mock_run)
+
+    success, msgs = HookInstaller.install_global_git_hooks()
+    assert success is True
+    assert (fake_home / ".guard" / "hooks" / "pre-commit").exists()
+    assert (fake_home / ".guard" / "hooks" / "prepare-commit-msg").exists()
+
+    status = HookInstaller.get_global_hooks_status()
+    assert status["is_active"] is True
+
+    # Test CLI command
+    res = runner.invoke(app, ["hook", "status"])
+    assert res.exit_code == 0
+    assert "Global Git Hooks" in res.stdout
+
+    # Uninstall
+    un_success, un_msgs = HookInstaller.uninstall_global_git_hooks()
+    assert un_success is True
+    assert "core.hooksPath" not in git_globals

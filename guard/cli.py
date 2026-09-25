@@ -398,12 +398,25 @@ def hook_install_cmd(
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
     mode: Optional[str] = typer.Option(None, "--mode", "-m", help="Mode: 'git' (stealth), 'agent', or 'all'"),
     stealth: bool = typer.Option(False, "--stealth", "-s", help="Shortcut for --mode git (Zero workspace footprint, Git hooks only)"),
+    global_hooks: bool = typer.Option(False, "--global", "-g", help="Configure Git hooks globally (git config --global core.hooksPath ~/.guard/hooks)"),
     all_repos: bool = typer.Option(False, "--all-repos", help="Install Git hooks to all discovered child Git repositories in workspace"),
     select_repos: Optional[str] = typer.Option(None, "--select-repos", help="Comma-separated indices (1,2) or names of child repositories"),
 ):
     """
     Install Guard hooks and/or AI agent directives into target repository or workspace.
     """
+    if global_hooks:
+        console.print("[cyan]Configuring Global Git Hooks (~/.guard/hooks)...[/cyan]")
+        success, msgs = HookInstaller.install_global_git_hooks()
+        for m in msgs:
+            console.print(f"[green]• {m}[/green]")
+        if success:
+            console.print("[bold green]✅ Global Git Hooks active! Every Git repository on this machine is protected.[/bold green]")
+        else:
+            console.print("[bold red]❌ Failed to configure global Git hooks.[/bold red]")
+            raise typer.Exit(code=1)
+        return
+
     target_path = Path(repo).resolve() if repo else Path.cwd().resolve()
     installer = HookInstaller(target_path)
 
@@ -416,8 +429,8 @@ def hook_install_cmd(
                 rel = cr.relative_to(target_path)
                 console.print(f"  [bold yellow][{idx}][/bold yellow] ./{rel} [dim](.git)[/dim]")
             console.print("  [bold green][A][/bold green] All repositories (Install to all child repos)")
+            console.print("  [bold magenta][G][/bold magenta] Global Git Hooks (Configure git config --global core.hooksPath - protects ALL repos on machine)")
             console.print("  [dim][N][/dim] None (Skip Git hooks, install workspace Agent Directives at root only)\n")
-
             # Respect --mode / --stealth in workspace mode
             effective_mode = "git" if stealth else (mode.lower().strip() if mode else "all")
 
@@ -440,8 +453,16 @@ def hook_install_cmd(
                     if not chosen_repos:
                         console.print(f"[bold yellow]⚠️ No child repositories matched '--select-repos {select_repos}'.[/bold yellow]")
                 elif sys.stdin and sys.stdin.isatty():
-                    ans = typer.prompt("Select repositories to install Git hooks into [A, 1-N, N]", default="A").strip()
-                    if ans.lower() in ("a", "all", "y", "yes"):
+                    ans = typer.prompt("Select repositories to install Git hooks into [A, 1-N, G, N]", default="A").strip()
+                    if ans.lower() in ("g", "global"):
+                        console.print("\n[cyan]Configuring Global Git Hooks (~/.guard/hooks)...[/cyan]")
+                        g_success, g_msgs = HookInstaller.install_global_git_hooks()
+                        for m in g_msgs:
+                            console.print(f"[green]• {m}[/green]")
+                        if g_success:
+                            console.print("[bold green]✅ Global Git Hooks active! Every Git repository on this machine is protected.[/bold green]")
+                        chosen_repos = []
+                    elif ans.lower() in ("a", "all", "y", "yes"):
                         chosen_repos = child_repos
                     elif ans.lower() in ("n", "no", "none", ""):
                         chosen_repos = []
@@ -452,7 +473,6 @@ def hook_install_cmd(
                                 chosen_repos.append(child_repos[int(s) - 1])
                 else:
                     chosen_repos = child_repos
-
             installed_count = 0
             if chosen_repos:
                 console.print(f"\n[cyan]Installing Git hooks into {len(chosen_repos)} repository(s)...[/cyan]")
@@ -545,10 +565,18 @@ def hook_install_cmd(
 def hook_uninstall_cmd(
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
     mode: str = typer.Option("all", "--mode", "-m", help="Mode to uninstall: 'git', 'agent', or 'all'"),
+    global_hooks: bool = typer.Option(False, "--global", "-g", help="Uninstall global Git hooks (git config --global --unset core.hooksPath)"),
 ):
     """
     Safely uninstall Guard hooks and restore previous user files.
     """
+    if global_hooks:
+        success, messages = HookInstaller.uninstall_global_git_hooks()
+        for m in messages:
+            console.print(f"[yellow]• {m}[/yellow]")
+        console.print("[bold green]✅ Global Git hooks uninstalled.[/bold green]")
+        return
+
     installer = HookInstaller(Path(repo) if repo else None)
     success, messages = installer.uninstall(mode=mode)
     for m in messages:
@@ -581,7 +609,8 @@ def hook_status_cmd(
     table.add_column("Target / Notes")
 
     table.add_row("Git Repository", "✅ Yes" if status["is_git_repo"] else "❌ No", "Git VCS")
-    table.add_row("Git pre-commit", "✅ Active" if status["pre_commit_installed"] else "⚪ Inactive", ".git/hooks/pre-commit")
+    g_stat = HookInstaller.get_global_hooks_status()
+    table.add_row("Global Git Hooks", "✅ Active" if g_stat["is_active"] else "⚪ Inactive", g_stat["configured_path"] or "git config --global core.hooksPath (~/.guard/hooks)")
     table.add_row("Git prepare-commit-msg", "✅ Active" if status["prepare_commit_msg_installed"] else "⚪ Inactive", ".git/hooks/prepare-commit-msg")
     table.add_row("Local Git Exclude", "✅ Active" if status.get("git_exclude_active") else "⚪ Inactive", ".git/info/exclude (.guard/ hidden)")
     table.add_row("CLAUDE.md Directive", "✅ Active" if status["claude_md_active"] else "⚪ Inactive", "Directives for omp & Claude Code")
