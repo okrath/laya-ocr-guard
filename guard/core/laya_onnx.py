@@ -34,7 +34,7 @@ MODEL_URLS = {
     "laya-int8": "https://huggingface.co/techtheist/laya-onnx/resolve/main/en/model_int8.onnx",
 }
 
-DEFAULT_MODEL = "laya-int4"  # 262MB single-file quantized checkpoint
+DEFAULT_MODEL = "laya-int8"  # 554MB high-fidelity quantized checkpoint (99.8% accuracy parity)
 
 
 def get_laya_model_dir() -> Path:
@@ -61,12 +61,12 @@ def resolve_model_file(model_name: Optional[str] = None) -> Tuple[str, Path]:
     if "int4" in name_lower:
         return "laya-int4", p4
 
-    # Generic 'laya' or default: check whichever file is already downloaded
-    if p4.exists():
-        return "laya-int4", p4
+    # Generic 'laya' or default: prioritize INT8
     if p8.exists():
         return "laya-int8", p8
-    return "laya-int4", p4
+    if p4.exists():
+        return "laya-int4", p4
+    return "laya-int8", p8
 
 
 def get_model_path(model_name: Optional[str] = None) -> Path:
@@ -90,10 +90,10 @@ def is_model_installed(model_name: Optional[str] = None) -> bool:
     if "int4" in name_lower:
         p = model_dir / "model_int4.onnx"
         return p.is_file() and p.stat().st_size > 10_000_000
-    # Generic 'laya': check either int4 or int8
-    p4 = model_dir / "model_int4.onnx"
+    # Generic 'laya': check int8 first, then int4 fallback
     p8 = model_dir / "model_int8.onnx"
-    return (p4.is_file() and p4.stat().st_size > 10_000_000) or (p8.is_file() and p8.stat().st_size > 10_000_000)
+    p4 = model_dir / "model_int4.onnx"
+    return (p8.is_file() and p8.stat().st_size > 10_000_000) or (p4.is_file() and p4.stat().st_size > 10_000_000)
 
 
 def download_laya_model(

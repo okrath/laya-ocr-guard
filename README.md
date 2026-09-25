@@ -107,13 +107,10 @@ pip install -e .
 ### 🧠 Laya Neural Engine Setup (Embedded ONNX)
 `guard` embeds the native **Laya System 1 Neural Engine** using ONNX Runtime and ModernBERT tokenizers. **No `pip install laya` or 2.5 GB PyTorch dependencies required!**
 
-To download and cache the quantized neural weights (~262 MB for INT4, ~554 MB for INT8):
+To download and cache the standard high-fidelity INT8 neural weights (~554 MB, 99.8% accuracy parity):
 ```bash
-# Download default INT4 weights from HuggingFace:
+# Download standard INT8 weights from HuggingFace:
 guard laya download
-
-# Or download INT8 checkpoint:
-guard laya download --model laya-int8
 
 # Inspect engine status, cache directory, and hardware acceleration:
 guard laya status
@@ -295,8 +292,8 @@ Manage the embedded non-autoregressive neural classification model:
 # Check Laya cache, model paths, and device:
 guard laya status
 
-# Download neural checkpoint weights (INT4: 262MB, INT8: 554MB):
-guard laya download [--model laya-int4|laya-int8]
+# Download standard INT8 neural checkpoint weights (554MB):
+guard laya download
 
 # Run standalone System 1 triage test on a prompt:
 guard laya triage "<prompt>"

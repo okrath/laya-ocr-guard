@@ -368,7 +368,7 @@ pipx install git+https://github.com/okrath/laya-ocr-guard.git
 # Or with standard pip (Windows / Linux / macOS)
 pip install git+https://github.com/okrath/laya-ocr-guard.git
 
-# Download embedded Laya ONNX neural model weights (INT4: 262MB):
+# Download embedded Laya ONNX neural model weights (INT8: 554MB):
 guard laya download
 
 # Verify installation health
@@ -468,7 +468,7 @@ guard doctor</code></pre>
           <tr>
             <td><code>guard laya download</code></td>
             <td>Download and cache quantized Laya ONNX weights from HuggingFace</td>
-            <td><code>--model &lt;laya-int4|laya-int8&gt;</code>, <code>--force</code></td>
+            <td><code>--model &lt;laya-int8&gt;</code>, <code>--force</code></td>
           </tr>
           <tr>
             <td><code>guard laya status</code></td>

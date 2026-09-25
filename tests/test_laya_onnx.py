@@ -18,6 +18,7 @@ from guard.core.laya_engine import LayaEngine, DomainType, TaskIntent, RiskLevel
 
 
 def test_laya_model_paths():
+    assert DEFAULT_MODEL == "laya-int8"
     p4 = get_model_path("laya-int4")
     p8 = get_model_path("laya-int8")
     assert "model_int4.onnx" in str(p4)
@@ -100,7 +101,7 @@ def test_mock_predict_questions():
 
 def test_laya_engine_with_onnx_installed(tmp_path):
     # Simulate installed ONNX model
-    fake_model = tmp_path / "model_int4.onnx"
+    fake_model = tmp_path / "model_int8.onnx"
     fake_model.write_bytes(b"0" * 15_000_000)
 
     mock_answers = {
@@ -113,7 +114,7 @@ def test_laya_engine_with_onnx_installed(tmp_path):
     with patch("guard.core.laya_onnx.get_model_path", return_value=fake_model), \
          patch("guard.core.laya_onnx.is_model_installed", return_value=True), \
          patch.object(LayaONNXRuntime, "predict_questions", return_value=mock_answers):
-        engine = LayaEngine(model_name="laya-int4")
+        engine = LayaEngine(model_name="laya-int8")
         assert engine.mode == "laya_onnx_neural"
         res = engine.triage("Center the modal dialog button")
         assert res.domain == DomainType.FRONTEND

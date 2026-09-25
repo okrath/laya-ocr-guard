@@ -935,7 +935,7 @@ def laya_status_cmd():
 
 @laya_app.command("download")
 def laya_download_cmd(
-    model: str = typer.Option("laya-int4", "--model", "-m", help="Model checkpoint: laya-int4 (262MB) or laya-int8 (554MB)"),
+    model: str = typer.Option("laya-int8", "--model", "-m", help="Model checkpoint: laya-int8 (554MB)"),
     force: bool = typer.Option(False, "--force", "-f", help="Re-download model even if already cached"),
 ):
     """Download quantized Laya ONNX weights from HuggingFace."""
@@ -946,7 +946,7 @@ def laya_download_cmd(
     )
     from rich.progress import BarColumn, DownloadColumn, Progress, TextColumn, TimeRemainingColumn, TransferSpeedColumn
 
-    norm_key = "laya-int4" if "int4" in model.lower() else "laya-int8"
+    norm_key = "laya-int8" if "int8" in model.lower() or "int4" not in model.lower() else "laya-int4"
     if is_model_installed(norm_key) and not force:
         console.print(f"[bold green]✅ Model '{norm_key}' is already downloaded at: {get_model_path(norm_key)}[/bold green]")
         return

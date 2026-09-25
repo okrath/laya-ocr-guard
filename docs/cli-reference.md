@@ -170,15 +170,15 @@ Manages the embedded Laya ONNX Native Neural Decision Engine.
 # Check model caching status, hardware acceleration, and paths:
 guard laya status
 
-# Download quantized weights from HuggingFace (INT4 ~262MB, INT8 ~554MB):
-guard laya download [--model <laya-int4|laya-int8>] [--force]
+# Download quantized INT8 weights from HuggingFace (554MB):
+guard laya download [--force]
 
 # Run interactive System 1 triage classification test on a prompt:
 guard laya triage "<prompt>"
 ```
 
 ### Options for `guard laya download`:
-* `-m, --model <laya-int4|laya-int8>`: Model checkpoint to download (default: `laya-int4`, 262MB single-file).
+* `-m, --model <laya-int8>`: Model checkpoint to download (default: `laya-int8`, 554MB high-fidelity INT8).
 * `-f, --force`: Re-download weights even if already cached.
 
 > 💡 **Zero-Dependency Fallback:** If weights are not yet downloaded, Guard runs its sub-1ms Zero-Overhead Reflex Matrix automatically so workflows are never blocked.

@@ -47,7 +47,7 @@ class LLMConfig(BaseModel):
 
 class LayaConfig(BaseModel):
     enabled: bool = Field(default=True, description="Laya decision engine always active")
-    model_name: str = Field(default="laya-int4", description="Model checkpoint: laya-int4 or laya-int8")
+    model_name: str = Field(default="laya-int8", description="Model checkpoint: laya-int8 (554MB high-fidelity)")
     device: str = Field(default="cpu", description="Inference device: cpu or cuda")
     timeout_ms: int = Field(default=3000, description="Fast-fail timeout in ms")
 

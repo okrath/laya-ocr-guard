@@ -121,7 +121,7 @@ class LayaEngine:
     are cached locally, with instant heuristic fallback when offline.
     """
 
-    def __init__(self, model_name: str = "laya-int4", device: str = "cpu", prefer_neural: bool = True):
+    def __init__(self, model_name: str = "laya-int8", device: str = "cpu", prefer_neural: bool = True):
         self.model_name = model_name
         self.device = device
         self.prefer_neural = prefer_neural
