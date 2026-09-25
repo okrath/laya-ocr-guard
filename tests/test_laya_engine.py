@@ -81,3 +81,21 @@ def test_evaluate_invariants_pass(engine):
     eval_res = engine.evaluate_invariants(invariants, diff, files)
     assert eval_res.all_passed is True
     assert eval_res.checks[0].passed is True
+
+
+def test_evaluate_invariants_ignore_escape_html(engine):
+    invariants = [
+        {"id": "INV-01", "description": "Không được bỏ phím Escape để đóng modal"},
+    ]
+    # Diff that removes escapeHtml helper, NOT keyboard escape handler
+    diff = """
+--- a/src/utils.ts
++++ b/src/utils.ts
+@@ -5,3 +5,1 @@
+- const safe = escapeHtml(userInput);
++ const safe = sanitize(userInput);
+    """
+    files = ["src/utils.ts"]
+    eval_res = engine.evaluate_invariants(invariants, diff, files)
+    assert eval_res.all_passed is True
+    assert eval_res.checks[0].passed is True

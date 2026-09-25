@@ -242,7 +242,7 @@ All Touched Files: {files_summary}
 
 Git Diff:
 ```
-{diff_summary.raw_diff[:12000] if diff_summary else 'No diff'}
+{self._prepare_diff_for_review(diff_summary)}
 ```
         """
 
@@ -255,6 +255,20 @@ Git Diff:
         )
 
         return self._parse_llm_response(raw_response, model_name=model_name, focus=focus)
+
+
+    def _prepare_diff_for_review(self, diff_summary: Optional[DiffSummary]) -> str:
+        if not diff_summary or not diff_summary.raw_diff:
+            return 'No diff'
+        raw = diff_summary.raw_diff
+        if len(raw) <= 80000:
+            return raw
+        # Prioritize application source code over markdown/docs
+        chunks = raw.split('diff --git ')
+        src_chunks = [c for c in chunks if c.startswith('a/src/')]
+        other_chunks = [c for c in chunks if not c.startswith('a/src/')]
+        ordered = src_chunks + other_chunks
+        return 'diff --git '.join(ordered)[:80000]
 
     def _parse_llm_response(self, text: str, model_name: str = "LLM", focus: str = "all") -> Optional[LLMReviewVerdict]:
         try:

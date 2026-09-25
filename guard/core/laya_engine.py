@@ -240,7 +240,7 @@ class LayaEngine:
             note = "Maintained"
 
             # Check if negative patterns (deleted key handlers, deleted endpoints) match
-            if "escape" in desc_lower and any("keydown" in line.lower() or "escape" in line.lower() for line in removed_lines):
+            if "escape" in desc_lower and any("keydown" in line.lower() or ("escape" in line.lower() and "escapehtml" not in line.lower()) for line in removed_lines):
                 passed = False
                 note = "Detected removal of keyboard/escape handler in diff"
             elif "disabled" in desc_lower and any("disabled" in line.lower() for line in removed_lines):
