@@ -23,6 +23,8 @@ def test_hook_status_initial(mock_git_repo):
     assert status["is_git_repo"] is True
     assert status["pre_commit_installed"] is False
     assert status["prepare_commit_msg_installed"] is False
+    assert status["claude_md_active"] is False
+    assert status["agent_md_active"] is False
 
 
 def test_hook_install_and_backup(mock_git_repo):
@@ -47,6 +49,12 @@ def test_hook_install_and_backup(mock_git_repo):
     assert status["pre_commit_installed"] is True
     assert status["prepare_commit_msg_installed"] is True
     assert status["agent_wrapper_installed"] is True
+    assert status["claude_md_active"] is True
+    assert status["agent_md_active"] is True
+
+    # Check CLAUDE.md and AGENT.md exist
+    assert (mock_git_repo / "CLAUDE.md").exists()
+    assert (mock_git_repo / "AGENT.md").exists()
 
 
 def test_hook_uninstall_and_restore(mock_git_repo):
@@ -65,3 +73,7 @@ def test_hook_uninstall_and_restore(mock_git_repo):
     assert pre_commit.exists()
     assert "original hook" in pre_commit.read_text(encoding="utf-8")
     assert not (mock_git_repo / ".git" / "hooks" / "pre-commit.guard.bak").exists()
+
+    # Guard-generated CLAUDE.md and AGENT.md should be cleaned up
+    assert not (mock_git_repo / "CLAUDE.md").exists()
+    assert not (mock_git_repo / "AGENT.md").exists()

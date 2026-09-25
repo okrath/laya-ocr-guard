@@ -4,7 +4,7 @@ Provides:
 - `guard pre "<prompt>"`: Triage, Baseline Contracts, Invariants, Pre-task Note
 - `guard post [--auto-fix]`: Diff Audit, Build Check, OCR Rules, Laya Invariants, LLM Final Gate Verdict
 - `guard config` [show | llm | test | sync]: Manage LLM and OCR credentials
-- `guard hook` [install | uninstall | status]: Bind hooks to target repos
+- `guard hook` [install | uninstall | status]: Bind hooks and AI Agent directives to target repos
 - `guard run "<prompt>" -- <cmd>`: Sandwich pattern wrapper
 - `guard doctor`: System diagnostic check & supply-chain update quarantine audit
 - `guard update` [ocr | self]: Safe upgrades respecting 3-day quarantine policy
@@ -93,10 +93,10 @@ def execute_pre_task(prompt: str, repo_path: Optional[Path] = None, quick: bool 
     repo_analyzer = detect_repo_domain(target_repo)
     diff_inspector = GitDiffInspector(target_repo)
 
-    # Extract file names mentioned in prompt or touched in git
+    # Extract file names mentioned in prompt or touched in working tree
     prompt_files = re.findall(r"[\w\-\.\/]+\.[a-zA-Z0-9]+", prompt)
-    untracked = diff_inspector.get_untracked_files()
-    candidate_files = list(set([f for f in (untracked + prompt_files) if not f.startswith(".guard") and f != ".gitignore"]))
+    working_files = diff_inspector.get_working_files()
+    candidate_files = list(set([f for f in (working_files + prompt_files) if not f.startswith(".guard") and f != ".gitignore"]))
 
     # 2. Laya System 1 Triage (<30ms)
     triage = laya.triage(prompt=prompt, context_files=candidate_files)
@@ -380,14 +380,14 @@ def hook_install_cmd(
     mode: str = typer.Option("all", "--mode", "-m", help="Mode: git, agent, or all"),
 ):
     """
-    Install Guard hooks into target repository (auto-guards git commits and agent tasks).
+    Install Guard hooks and AI agent directives into target repository.
     """
     installer = HookInstaller(Path(repo) if repo else None)
     success, messages = installer.install(mode=mode)
     for m in messages:
         console.print(f"[green]• {m}[/green]")
     if success:
-        console.print("[bold green]✅ Guard hooks successfully installed![/bold green]")
+        console.print("[bold green]✅ Guard hooks and AI Agent directives successfully installed![/bold green]")
     else:
         console.print("[bold red]❌ Failed to install some hooks.[/bold red]")
 
@@ -397,7 +397,7 @@ def hook_uninstall_cmd(
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
 ):
     """
-    Safely uninstall Guard hooks and restore previous user hooks.
+    Safely uninstall Guard hooks and restore previous user files.
     """
     installer = HookInstaller(Path(repo) if repo else None)
     success, messages = installer.uninstall()
@@ -411,19 +411,22 @@ def hook_status_cmd(
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
 ):
     """
-    Check active hook status in target repository.
+    Check active hook status and AI agent directives in target repository.
     """
     installer = HookInstaller(Path(repo) if repo else None)
     status = installer.get_status()
 
-    table = Table(title=f"🪝 Guard Hook Status ({installer.repo_path.name})", show_header=True)
-    table.add_column("Hook Type", style="bold")
-    table.add_column("Installed Status", justify="center")
+    table = Table(title=f"🪝 Guard Hook & Agent Status ({installer.repo_path.name})", show_header=True)
+    table.add_column("Component / Directive", style="bold")
+    table.add_column("Status", justify="center")
+    table.add_column("Target / Notes")
 
-    table.add_row("Git Repository", "✅ Yes" if status["is_git_repo"] else "❌ No")
-    table.add_row("Git pre-commit", "✅ Active" if status["pre_commit_installed"] else "⚪ Inactive")
-    table.add_row("Git prepare-commit-msg", "✅ Active" if status["prepare_commit_msg_installed"] else "⚪ Inactive")
-    table.add_row("Agent Wrapper (.guard/bin)", "✅ Active" if status["agent_wrapper_installed"] else "⚪ Inactive")
+    table.add_row("Git Repository", "✅ Yes" if status["is_git_repo"] else "❌ No", "Git VCS")
+    table.add_row("Git pre-commit", "✅ Active" if status["pre_commit_installed"] else "⚪ Inactive", ".git/hooks/pre-commit")
+    table.add_row("Git prepare-commit-msg", "✅ Active" if status["prepare_commit_msg_installed"] else "⚪ Inactive", ".git/hooks/prepare-commit-msg")
+    table.add_row("CLAUDE.md Directive", "✅ Active" if status["claude_md_active"] else "⚪ Inactive", "Tự động cho omp & Claude Code")
+    table.add_row("AGENT.md Directive", "✅ Active" if status["agent_md_active"] else "⚪ Inactive", "Tự động cho Cursor, Windsurf, Aider")
+    table.add_row("Agent Wrapper (.guard/bin)", "✅ Active" if status["agent_wrapper_installed"] else "⚪ Inactive", ".guard/bin/guard-exec")
 
     console.print(table)
 

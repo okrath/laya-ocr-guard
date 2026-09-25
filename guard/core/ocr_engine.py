@@ -164,6 +164,32 @@ class GitDiffInspector:
         except Exception:
             return []
 
+    def get_working_files(self) -> List[str]:
+        """
+        Returns all files currently touched in the working directory (staged, modified, or untracked).
+        """
+        if not self.is_git_repo():
+            return []
+        try:
+            res = subprocess.run(
+                ["git", "-C", str(self.repo_path), "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            files = []
+            stdout_text = res.stdout or ""
+            for line in stdout_text.splitlines():
+                if len(line) >= 4:
+                    filepath = line[3:].strip()
+                    if filepath and not filepath.startswith(".guard") and filepath != ".gitignore":
+                        files.append(filepath)
+            return files
+        except Exception:
+            return []
+
     def parse_diff(self, raw_diff: Optional[str], expected_files: Optional[List[str]] = None) -> DiffSummary:
         """
         Parse raw git diff string into structured FileDiffStat and detect out-of-scope changes.
