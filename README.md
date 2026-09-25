@@ -2,10 +2,13 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Documentation](https://img.shields.io/badge/docs-live_website-brightgreen.svg)](https://okrath.github.io/laya-ocr-guard/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#-cross-platform-installation-windows-linux-macos)
 [![Architecture](https://img.shields.io/badge/architecture-Dual--Gate-green.svg)](#-three-pillar-architecture)
 
 **Dual-Gate Impact Analysis & Regression Guard for AI-Assisted Development.**
+
+📖 **Live Documentation & Interactive Guide:** [https://okrath.github.io/laya-ocr-guard/](https://okrath.github.io/laya-ocr-guard/)
 
 `guard` wraps coding workflows in an automated safety harness by uniting three distinct pillars:
 1. **Laya** (System 1 fast reflex triage, <30ms, 0-cost, 0 token)
@@ -192,7 +195,7 @@ guard update self
 
 ## 🧪 Running the Test Suite
 
-The project includes an end-to-end integration and unit test suite (43+ tests):
+The project includes an end-to-end integration and unit test suite (45+ tests):
 
 ```bash
 pytest
