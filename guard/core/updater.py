@@ -10,14 +10,17 @@ Implements Supply-Chain Backdoor Protection (Quarantine Period):
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from typing import Optional, Tuple
-
 import httpx
 from pydantic import BaseModel
 
@@ -201,3 +204,133 @@ def perform_self_upgrade() -> Tuple[bool, str]:
         return False, f"pip upgrade failed: {err_out}"
     except Exception as e:
         return False, f"Error upgrading guard: {str(e)}"
+def get_update_cache_path() -> Path:
+    return Path.home() / ".guard" / "update_cache.json"
+
+
+def check_guard_self_update(timeout: float = 3.0, force: bool = False) -> VersionCheckResult:
+    """
+    Check if a newer version of laya-ocr-guard is available on GitHub.
+    Uses cached result if within 12 hours unless force=True.
+    """
+    from guard import __version__
+
+    installed = __version__
+    package_name = "laya-ocr-guard"
+    registry = "github"
+    cache_path = get_update_cache_path()
+
+    if not force and cache_path.is_file():
+        try:
+            cached_data = json.loads(cache_path.read_text(encoding="utf-8"))
+            cache_age = time.time() - cached_data.get("timestamp", 0)
+            if cache_age < 43200:  # 12 hours
+                return VersionCheckResult.model_validate(cached_data["result"])
+        except Exception:
+            pass
+
+    url = "https://raw.githubusercontent.com/okrath/laya-ocr-guard/main/pyproject.toml"
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            res = client.get(url, headers={"User-Agent": f"guard-cli/{installed}"})
+            if res.status_code != 200:
+                return VersionCheckResult(
+                    package_name=package_name,
+                    registry=registry,
+                    installed_version=installed,
+                    status=UpdateSecurityStatus.CHECK_FAILED,
+                    recommendation=f"HTTP {res.status_code} while querying GitHub",
+                )
+
+            m = re.search(r'version\s*=\s*["\']([^"\']+)["\']', res.text)
+            if not m:
+                return VersionCheckResult(
+                    package_name=package_name,
+                    registry=registry,
+                    installed_version=installed,
+                    status=UpdateSecurityStatus.CHECK_FAILED,
+                    recommendation="Could not parse remote version from GitHub",
+                )
+
+            latest = m.group(1).strip()
+            if is_version_newer(latest, installed):
+                status = UpdateSecurityStatus.SAFE_UPDATE_AVAILABLE
+                rec = f"New version v{latest} available! Run 'guard update self' to upgrade."
+            else:
+                status = UpdateSecurityStatus.UP_TO_DATE
+                rec = "Up to date with GitHub repository."
+
+            result = VersionCheckResult(
+                package_name=package_name,
+                registry=registry,
+                installed_version=installed,
+                latest_version=latest,
+                status=status,
+                recommendation=rec,
+            )
+
+            try:
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                cache_payload = {
+                    "timestamp": time.time(),
+                    "result": result.model_dump(mode="json"),
+                }
+                cache_path.write_text(json.dumps(cache_payload, indent=2), encoding="utf-8")
+            except Exception:
+                pass
+
+            return result
+
+    except Exception as e:
+        return VersionCheckResult(
+            package_name=package_name,
+            registry=registry,
+            installed_version=installed,
+            status=UpdateSecurityStatus.CHECK_FAILED,
+            recommendation=f"Network notice ({str(e)[:50]})",
+        )
+
+
+def get_cached_update_notice() -> Optional[str]:
+    """
+    Quickly read cached update status (<1ms, zero network call).
+    Returns a 1-line update notification string if an update is available.
+    """
+    from guard import __version__
+
+    cache_path = get_update_cache_path()
+    if not cache_path.is_file():
+        return None
+    try:
+        cached_data = json.loads(cache_path.read_text(encoding="utf-8"))
+        res = cached_data.get("result", {})
+        latest = res.get("latest_version")
+        if latest and is_version_newer(latest, __version__):
+            return f"💡 A new version of guard is available: v{__version__} → v{latest} (Run 'guard update self' to upgrade)"
+    except Exception:
+        pass
+    return None
+
+
+def maybe_trigger_background_update_check():
+    """
+    Spawns a daemon thread to refresh the update cache if missing or older than 24 hours.
+    Zero-overhead, non-blocking for user commands.
+    """
+    cache_path = get_update_cache_path()
+    should_check = True
+    if cache_path.is_file():
+        try:
+            cached_data = json.loads(cache_path.read_text(encoding="utf-8"))
+            cache_age = time.time() - cached_data.get("timestamp", 0)
+            if cache_age < 86400:  # 24 hours
+                should_check = False
+        except Exception:
+            should_check = True
+
+    if should_check:
+        try:
+            t = threading.Thread(target=check_guard_self_update, kwargs={"timeout": 3.0, "force": True}, daemon=True)
+            t.start()
+        except Exception:
+            pass

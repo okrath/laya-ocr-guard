@@ -7,7 +7,9 @@ from unittest.mock import MagicMock, patch
 from guard.core.updater import (
     UpdateSecurityStatus,
     VersionCheckResult,
+    check_guard_self_update,
     check_ocr_update,
+    get_cached_update_notice,
     is_version_newer,
     parse_version_tuple,
     perform_ocr_upgrade,
@@ -109,3 +111,52 @@ def test_perform_ocr_upgrade_force_allowed():
         success, msg = perform_ocr_upgrade(force=True, quarantine_days=3.0)
         assert success is True
         assert "Successfully upgraded" in msg
+def test_check_guard_self_update_newer(tmp_path):
+    mock_res = MagicMock()
+    mock_res.status_code = 200
+    mock_res.text = '[project]\nname = "laya-ocr-guard"\nversion = "9.9.9"\n'
+
+    dummy_cache = tmp_path / "cache.json"
+    with patch("httpx.Client.get", return_value=mock_res), \
+         patch("guard.core.updater.get_update_cache_path", return_value=dummy_cache):
+        res = check_guard_self_update(force=True)
+        assert res.package_name == "laya-ocr-guard"
+        assert res.latest_version == "9.9.9"
+        assert res.status == UpdateSecurityStatus.SAFE_UPDATE_AVAILABLE
+        assert "New version" in res.recommendation
+
+
+def test_check_guard_self_update_up_to_date(tmp_path):
+    mock_res = MagicMock()
+    mock_res.status_code = 200
+    mock_res.text = '[project]\nname = "laya-ocr-guard"\nversion = "0.1.0"\n'
+
+    dummy_cache = tmp_path / "cache.json"
+    with patch("httpx.Client.get", return_value=mock_res), \
+         patch("guard.core.updater.get_update_cache_path", return_value=dummy_cache):
+        res = check_guard_self_update(force=True)
+        assert res.status == UpdateSecurityStatus.UP_TO_DATE
+
+
+def test_get_cached_update_notice(tmp_path):
+    import json
+    dummy_cache = tmp_path / "cache.json"
+
+    # Cache has newer version
+    dummy_cache.write_text(json.dumps({
+        "timestamp": 9999999999.0,
+        "result": {
+            "package_name": "laya-ocr-guard",
+            "registry": "github",
+            "installed_version": "0.1.0",
+            "latest_version": "9.9.9",
+            "status": "SAFE_UPDATE_AVAILABLE",
+            "recommendation": "New version available"
+        }
+    }), encoding="utf-8")
+
+    with patch("guard.core.updater.get_update_cache_path", return_value=dummy_cache):
+        notice = get_cached_update_notice()
+        assert notice is not None
+        assert "A new version of guard is available" in notice
+        assert "v9.9.9" in notice

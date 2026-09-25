@@ -34,7 +34,15 @@ from guard.core.llm_reviewer import LLMReviewerEngine, ReviewVerdict
 from guard.core.ocr_engine import GitDiffInspector, OCRRulebookRunner
 from guard.core.simplicity_engine import SimplicityEngine
 from guard.core.session import BuildCheckResult, PostTaskRecord, SessionManager
-from guard.core.updater import UpdateSecurityStatus, check_ocr_update, perform_ocr_upgrade, perform_self_upgrade
+from guard.core.updater import (
+    UpdateSecurityStatus,
+    check_guard_self_update,
+    check_ocr_update,
+    get_cached_update_notice,
+    maybe_trigger_background_update_check,
+    perform_ocr_upgrade,
+    perform_self_upgrade,
+)
 from guard.domains.detector import (
     detect_build_command,
     detect_repo_domain,
@@ -514,6 +522,14 @@ def update_cmd(
     Safely update Alibaba OCR (with 3-day supply-chain quarantine) or Guard CLI itself.
     """
     if target.lower() in ["self", "guard"]:
+        if check_only:
+            console.print("[cyan]Checking for Laya-OCR-Guard updates on GitHub...[/cyan]")
+            check_res = check_guard_self_update(force=True)
+            console.print(f"Installed Version: v{check_res.installed_version}")
+            console.print(f"Latest Version:    v{check_res.latest_version or 'N/A'}")
+            console.print(f"Status:            [bold]{check_res.status.value}[/bold]")
+            console.print(f"Recommendation:    {check_res.recommendation}")
+            return
         console.print("[cyan]Upgrading Laya-OCR-Guard CLI from GitHub...[/cyan]")
         success, msg = perform_self_upgrade()
         if success:
@@ -558,6 +574,9 @@ def doctor_cmd(
     table.add_column("Component", style="bold")
     table.add_column("Status", justify="center")
     table.add_column("Version / Details")
+
+    # Guard CLI itself
+    table.add_row("Laya-OCR-Guard CLI", "✅ Active", f"v{__version__} (github.com/okrath/laya-ocr-guard)")
 
     # Python
     py_ver = sys.version.split()[0]
@@ -615,17 +634,30 @@ def doctor_cmd(
 
     # 2. Supply-Chain Security & Update Quarantine Table (Focused on Alibaba OCR)
     if check_updates:
-        console.print(f"\n[bold yellow]🛡️  SUPPLY-CHAIN SECURITY: ALIBABA OCR (Quarantine Policy: {quarantine_days:.0f} days)[/bold yellow]")
-        with console.status("[cyan]Checking npm registry for Alibaba OCR...[/cyan]"):
+        console.print(f"\n[bold yellow]🛡️  RELEASES & SUPPLY-CHAIN AUDIT (Alibaba OCR Quarantine: {quarantine_days:.0f} days)[/bold yellow]")
+        with console.status("[cyan]Checking GitHub & npm for releases...[/cyan]"):
+            guard_check = check_guard_self_update(force=True)
             ocr_check = check_ocr_update(quarantine_days=quarantine_days)
 
         sec_table = Table(show_header=True, header_style="bold cyan")
-        sec_table.add_column("Package / Registry", style="bold", width=38)
+        sec_table.add_column("Software Component", style="bold", width=34)
         sec_table.add_column("Installed", width=12)
-        sec_table.add_column("Latest (Registry)", width=18)
-        sec_table.add_column("Security Status", justify="center", width=22)
+        sec_table.add_column("Latest Release", width=18)
+        sec_table.add_column("Status", justify="center", width=22)
         sec_table.add_column("Recommendation & Action")
 
+        # Row 1: Laya-OCR-Guard
+        g_inst = f"v{guard_check.installed_version}" if guard_check.installed_version else "v" + __version__
+        g_latest = f"v{guard_check.latest_version}" if guard_check.latest_version else "N/A"
+        if guard_check.status == UpdateSecurityStatus.SAFE_UPDATE_AVAILABLE:
+            g_badge = "[bold white on blue]⬆️ UPDATE AVAILABLE[/bold white on blue]"
+        elif guard_check.status == UpdateSecurityStatus.UP_TO_DATE:
+            g_badge = "[bold green]✅ UP TO DATE[/bold green]"
+        else:
+            g_badge = "[yellow]⚠️ CHECK FAILED[/yellow]"
+        sec_table.add_row(f"{guard_check.package_name} ({guard_check.registry})", g_inst, g_latest, g_badge, guard_check.recommendation)
+
+        # Row 2: Alibaba OCR
         inst_str = ocr_check.installed_version or "(not installed)"
         latest_str = f"v{ocr_check.latest_version}" if ocr_check.latest_version else "N/A"
         if ocr_check.age_days is not None:
@@ -652,7 +684,13 @@ def doctor_cmd(
 
 
 def main():
-    app()
+    maybe_trigger_background_update_check()
+    try:
+        app()
+    finally:
+        notice = get_cached_update_notice()
+        if notice:
+            console.print(f"\n[dim yellow]{notice}[/dim yellow]")
 
 
 if __name__ == "__main__":

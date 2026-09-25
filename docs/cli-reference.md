@@ -119,13 +119,16 @@ guard update --force
 
 # Upgrade Laya-OCR-Guard CLI itself from GitHub:
 guard update self
+
+# Check for Guard CLI updates on GitHub without installing:
+guard update self --check
 ```
 
 ---
 
 ## 8. `guard doctor`
 
-Runs comprehensive system environment diagnostics and supply-chain security audit.
+Runs comprehensive system environment diagnostics and audits latest releases for both Laya-OCR-Guard CLI (GitHub) and Alibaba OCR (npm).
 
 ```bash
 guard doctor [options]

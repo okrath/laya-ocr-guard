@@ -233,14 +233,19 @@ guard update --force
 
 # Upgrade the Guard CLI itself directly from GitHub:
 guard update self
+
+# Check for Guard CLI updates on GitHub without installing:
+guard update self --check
+
+# Check system diagnostics & release audits:
+guard doctor
 ```
 
 ---
 
 ## 🧪 Running the Test Suite
 
-The project includes an end-to-end integration and unit test suite (64+ tests):
-
+The project includes an end-to-end integration and unit test suite (67+ tests):
 ```bash
 pytest
 ```
