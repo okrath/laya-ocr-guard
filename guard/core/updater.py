@@ -1,8 +1,6 @@
 """
-Supply-Chain Security & Update Quarantine Checker for Laya-OCR-Guard.
-Checks for new versions of:
-1. `laya` (via PyPI API)
-2. `@alibaba-group/open-code-review` (via npm registry API)
+Supply-Chain Security & Update Quarantine Checker for Alibaba Open Code Review (OCR).
+Monitors `@alibaba-group/open-code-review` releases on the npm registry.
 
 Implements Supply-Chain Backdoor Protection (Quarantine Period):
 - New releases < 2-3 days old are put on QUARANTINE HOLD to allow
@@ -12,7 +10,6 @@ Implements Supply-Chain Backdoor Protection (Quarantine Period):
 
 from __future__ import annotations
 
-import importlib.metadata
 import re
 import shutil
 import subprocess
@@ -34,7 +31,7 @@ class UpdateSecurityStatus(str, Enum):
 
 class VersionCheckResult(BaseModel):
     package_name: str
-    registry: str  # "PyPI" or "npm"
+    registry: str = "npm"
     installed_version: Optional[str] = None
     latest_version: Optional[str] = None
     release_date: Optional[str] = None
@@ -44,7 +41,7 @@ class VersionCheckResult(BaseModel):
 
 
 def parse_version_tuple(ver_str: str) -> Tuple[int, ...]:
-    """Parse version string into tuple of integers for comparison (e.g. '0.3.20' -> (0, 3, 20))."""
+    """Parse version string into tuple of integers for comparison (e.g. '1.12.9' -> (1, 12, 9))."""
     nums = re.findall(r"\d+", ver_str)
     return tuple(int(n) for n in nums) if nums else (0,)
 
@@ -54,15 +51,6 @@ def is_version_newer(latest: str, current: str) -> bool:
         return parse_version_tuple(latest) > parse_version_tuple(current)
     except Exception:
         return latest != current
-
-
-def get_installed_laya_version() -> Optional[str]:
-    try:
-        return importlib.metadata.version("laya")
-    except importlib.metadata.PackageNotFoundError:
-        return None
-    except Exception:
-        return None
 
 
 def get_installed_ocr_version() -> Optional[str]:
@@ -75,97 +63,6 @@ def get_installed_ocr_version() -> Optional[str]:
         return nums[0] if nums else "installed"
     except Exception:
         return "installed"
-
-
-def check_laya_update(quarantine_days: float = 3.0, timeout: float = 4.0) -> VersionCheckResult:
-    """
-    Check PyPI for `laya` releases and verify against quarantine period.
-    """
-    installed = get_installed_laya_version()
-    package_name = "laya"
-    registry = "PyPI"
-
-    try:
-        with httpx.Client(timeout=timeout) as client:
-            res = client.get("https://pypi.org/pypi/laya/json")
-            if res.status_code != 200:
-                return VersionCheckResult(
-                    package_name=package_name,
-                    registry=registry,
-                    installed_version=installed,
-                    status=UpdateSecurityStatus.CHECK_FAILED,
-                    recommendation=f"HTTP {res.status_code} khi kiểm tra PyPI",
-                )
-            data = res.json()
-            latest = data.get("info", {}).get("version", "")
-            releases = data.get("releases", {}).get(latest, [])
-            upload_iso = releases[0].get("upload_time_iso_8601") if releases else None
-
-            age_days: Optional[float] = None
-            date_display = "Không rõ"
-            if upload_iso:
-                # Parse ISO timestamp
-                rel_dt = datetime.fromisoformat(upload_iso.replace("Z", "+00:00"))
-                now_dt = datetime.now(timezone.utc)
-                age_days = (now_dt - rel_dt).total_seconds() / 86400.0
-                date_display = rel_dt.strftime("%Y-%m-%d %H:%M UTC")
-
-            if not installed:
-                return VersionCheckResult(
-                    package_name=package_name,
-                    registry=registry,
-                    installed_version=None,
-                    latest_version=latest,
-                    release_date=date_display,
-                    age_days=age_days,
-                    status=UpdateSecurityStatus.NOT_INSTALLED,
-                    recommendation="Tùy chọn: cài bằng `pip install laya` nếu cần model neural cục bộ.",
-                )
-
-            if not is_version_newer(latest, installed):
-                return VersionCheckResult(
-                    package_name=package_name,
-                    registry=registry,
-                    installed_version=installed,
-                    latest_version=latest,
-                    release_date=date_display,
-                    age_days=age_days,
-                    status=UpdateSecurityStatus.UP_TO_DATE,
-                    recommendation="Đã ở phiên bản mới nhất, hoạt động ổn định.",
-                )
-
-            # A newer version exists! Check quarantine period
-            if age_days is not None and age_days < quarantine_days:
-                return VersionCheckResult(
-                    package_name=package_name,
-                    registry=registry,
-                    installed_version=installed,
-                    latest_version=latest,
-                    release_date=date_display,
-                    age_days=age_days,
-                    status=UpdateSecurityStatus.QUARANTINE_HOLD,
-                    recommendation=f"🛡️ CÁCH LY BẢO MẬT: v{latest} mới ra mắt {age_days:.1f} ngày (< {quarantine_days:.0f} ngày). Giữ v{installed} để tránh backdoor / supply-chain attack.",
-                )
-
-            return VersionCheckResult(
-                package_name=package_name,
-                registry=registry,
-                installed_version=installed,
-                latest_version=latest,
-                release_date=date_display,
-                age_days=age_days,
-                status=UpdateSecurityStatus.SAFE_UPDATE_AVAILABLE,
-                recommendation=f"⬆️ Nâng cấp an toàn (Đã phát hành {age_days:.1f} ngày trước): `pip install --upgrade laya`",
-            )
-
-    except Exception as e:
-        return VersionCheckResult(
-            package_name=package_name,
-            registry=registry,
-            installed_version=installed,
-            status=UpdateSecurityStatus.CHECK_FAILED,
-            recommendation=f"Không thể kiểm tra PyPI ({str(e)[:60]})",
-        )
 
 
 def check_ocr_update(quarantine_days: float = 3.0, timeout: float = 4.0) -> VersionCheckResult:
@@ -234,7 +131,7 @@ def check_ocr_update(quarantine_days: float = 3.0, timeout: float = 4.0) -> Vers
                     release_date=date_display,
                     age_days=age_days,
                     status=UpdateSecurityStatus.QUARANTINE_HOLD,
-                    recommendation=f"🛡️ CÁCH LY BẢO MẬT: v{latest} mới ra mắt {age_days:.1f} ngày (< {quarantine_days:.0f} ngày). Giữ v{installed} để chờ kiểm chứng cộng đồng.",
+                    recommendation=f"🛡️ CÁCH LY BẢO MẬT: v{latest} mới ra mắt {age_days:.1f} ngày (< {quarantine_days:.0f} ngày). Giữ v{installed} để chờ kiểm chứng cộng đồng (chống backdoor).",
                 )
 
             return VersionCheckResult(
