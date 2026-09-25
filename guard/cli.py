@@ -398,12 +398,92 @@ def hook_install_cmd(
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
     mode: Optional[str] = typer.Option(None, "--mode", "-m", help="Mode: 'git' (stealth), 'agent', or 'all'"),
     stealth: bool = typer.Option(False, "--stealth", "-s", help="Shortcut for --mode git (Zero workspace footprint, Git hooks only)"),
+    all_repos: bool = typer.Option(False, "--all-repos", help="Install Git hooks to all discovered child Git repositories in workspace"),
+    select_repos: Optional[str] = typer.Option(None, "--select-repos", help="Comma-separated indices (1,2) or names of child repositories"),
 ):
     """
-    Install Guard hooks and/or AI agent directives into target repository.
+    Install Guard hooks and/or AI agent directives into target repository or workspace.
     """
-    installer = HookInstaller(Path(repo) if repo else None)
+    target_path = Path(repo).resolve() if repo else Path.cwd().resolve()
+    installer = HookInstaller(target_path)
 
+    # 1. Multi-Repo Workspace Auto-Discovery (when current folder has no .git)
+    if not installer.is_git_repo():
+        child_repos = installer.find_child_git_repos()
+        if child_repos:
+            console.print(f"\n[bold cyan]🔍 Workspace Mode:[/bold cyan] Current directory has no .git, but found [bold green]{len(child_repos)}[/bold green] child Git repositories:")
+            for idx, cr in enumerate(child_repos, start=1):
+                rel = cr.relative_to(target_path)
+                console.print(f"  [bold yellow][{idx}][/bold yellow] ./{rel} [dim](.git)[/dim]")
+            console.print("  [bold green][A][/bold green] All repositories (Cài tất cả)")
+            console.print("  [dim][N][/dim] None (Bỏ qua Git hooks, chỉ cài Agent directives tại gốc workspace)\n")
+
+            # Respect --mode / --stealth in workspace mode
+            effective_mode = "git" if stealth else (mode.lower().strip() if mode else "all")
+
+            chosen_repos: List[Path] = []
+            if effective_mode != "agent":
+                if all_repos:
+                    chosen_repos = child_repos
+                elif select_repos:
+                    parts = [p.strip() for p in select_repos.split(",")]
+                    for p in parts:
+                        if p.lower() in ("a", "all"):
+                            chosen_repos = child_repos
+                            break
+                        elif p.isdigit() and 1 <= int(p) <= len(child_repos):
+                            chosen_repos.append(child_repos[int(p) - 1])
+                        else:
+                            for cr in child_repos:
+                                if cr.name == p or str(cr.relative_to(target_path)) == p:
+                                    chosen_repos.append(cr)
+                    if not chosen_repos:
+                        console.print(f"[bold yellow]⚠️ No child repositories matched '--select-repos {select_repos}'.[/bold yellow]")
+                elif sys.stdin and sys.stdin.isatty():
+                    ans = typer.prompt("Select repositories to install Git hooks into [A, 1-N, N]", default="A").strip()
+                    if ans.lower() in ("a", "all", "y", "yes"):
+                        chosen_repos = child_repos
+                    elif ans.lower() in ("n", "no", "none", ""):
+                        chosen_repos = []
+                    else:
+                        for s in ans.replace(" ", ",").split(","):
+                            s = s.strip()
+                            if s.isdigit() and 1 <= int(s) <= len(child_repos):
+                                chosen_repos.append(child_repos[int(s) - 1])
+                else:
+                    chosen_repos = child_repos
+
+            installed_count = 0
+            if chosen_repos:
+                console.print(f"\n[cyan]Installing Git hooks into {len(chosen_repos)} repository(s)...[/cyan]")
+                res = installer.install_multi(chosen_repos, mode="git")
+                for r_path, r_info in res.items():
+                    r_rel = Path(r_path).relative_to(target_path)
+                    if r_info["success"]:
+                        installed_count += 1
+                        console.print(f"  [bold green]✅ Git hooks active in: ./{r_rel}[/bold green]")
+                    else:
+                        console.print(f"  [red]❌ Failed in: ./{r_rel}[/red]")
+
+            # Install workspace agent directives at root if mode is 'agent' or 'all'
+            agent_installed = False
+            if effective_mode in ("agent", "all"):
+                console.print("\n[cyan]Installing Workspace Agent Directives (CLAUDE.md & AGENT.md) at root...[/cyan]")
+                success, msgs = installer.install(mode="agent")
+                for m in msgs:
+                    console.print(f"[green]• {m}[/green]")
+                agent_installed = success
+
+            if installed_count > 0 and agent_installed:
+                console.print("[bold green]✅ Hybrid Workspace Protection Active (Git Hooks in sub-repos + Agent Directives at root)[/bold green]")
+            elif installed_count > 0:
+                console.print(f"[bold green]✅ Git hooks installed into {installed_count} repository(s).[/bold green]")
+            elif agent_installed:
+                console.print("[bold green]✅ Agent Directives installed at workspace root.[/bold green]")
+            else:
+                console.print("[yellow]ℹ️ No hooks or directives were installed.[/yellow]")
+            return
+    # 2. Standard Single-Repo Installation
     if stealth:
         selected_mode = "git"
     elif mode:
@@ -444,8 +524,9 @@ def hook_install_cmd(
                     break
                 console.print("[yellow]Invalid choice. Please enter 1, 2, or 3.[/yellow]")
         else:
-            selected_mode = "all"  # Default to full protection for backward-compatible CI/scripts
+            selected_mode = "all"
             console.print("[dim]• Non-interactive environment: defaulting to mode 'all' (use --stealth for git-only)[/dim]")
+
     success, messages = installer.install(mode=selected_mode)
     for m in messages:
         console.print(f"[green]• {m}[/green]")
@@ -508,6 +589,26 @@ def hook_status_cmd(
     table.add_row("Agent Wrapper (.guard/bin)", "✅ Active" if status["agent_wrapper_installed"] else "⚪ Inactive", ".guard/bin/guard-exec")
 
     console.print(table)
+
+    # If in a multi-repo workspace (no root git), report status of child git repos
+    if not status["is_git_repo"]:
+        child_repos = installer.find_child_git_repos()
+        if child_repos:
+            console.print(f"\n[cyan]🔍 Discovered {len(child_repos)} child Git repositories in workspace:[/cyan]")
+            sub_table = Table(title="Child Repositories Hook Status", show_header=True)
+            sub_table.add_column("Repository", style="bold")
+            sub_table.add_column("pre-commit", justify="center")
+            sub_table.add_column("prepare-commit-msg", justify="center")
+            for cr in child_repos:
+                sub_installer = HookInstaller(cr)
+                sub_stat = sub_installer.get_status()
+                rel = cr.relative_to(installer.repo_path)
+                sub_table.add_row(
+                    f"./{rel}",
+                    "✅ Active" if sub_stat["pre_commit_installed"] else "⚪ Inactive",
+                    "✅ Active" if sub_stat["prepare_commit_msg_installed"] else "⚪ Inactive",
+                )
+            console.print(sub_table)
 
 
 @app.command("review")

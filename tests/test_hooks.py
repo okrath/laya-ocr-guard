@@ -197,3 +197,77 @@ def test_hook_uninstall_cleans_git_exclude(mock_git_repo):
 
     installer.uninstall(mode="git")
     assert ".guard/" not in exclude.read_text(encoding="utf-8")
+
+
+def test_find_child_git_repos(tmp_path):
+    workspace = tmp_path / "my_workspace"
+    workspace.mkdir()
+
+    repo1 = workspace / "services" / "backend"
+    repo1.mkdir(parents=True)
+    (repo1 / ".git").mkdir()
+
+    repo2 = workspace / "apps" / "frontend"
+    repo2.mkdir(parents=True)
+    (repo2 / ".git").mkdir()
+
+    # Ignored directory with a fake .git
+    ignored = workspace / "node_modules" / "some_pkg"
+    ignored.mkdir(parents=True)
+    (ignored / ".git").mkdir()
+
+    installer = HookInstaller(workspace)
+    assert not installer.is_git_repo()
+
+    discovered = installer.find_child_git_repos()
+    discovered_names = [r.name for r in discovered]
+    assert "backend" in discovered_names
+    assert "frontend" in discovered_names
+    assert "some_pkg" not in discovered_names
+
+
+def test_safe_append_preserves_user_directives(mock_git_repo):
+    claude_md = mock_git_repo / "CLAUDE.md"
+    user_rules = "# My Custom Company Guidelines\n- Always write docstrings\n- Run linter before pushing\n"
+    claude_md.write_text(user_rules, encoding="utf-8")
+
+    installer = HookInstaller(mock_git_repo)
+    installer.install(mode="agent")
+
+    # Verify original content is STILL present
+    updated_content = claude_md.read_text(encoding="utf-8")
+    assert "# My Custom Company Guidelines" in updated_content
+    assert "Always write docstrings" in updated_content
+    assert "LAYA-OCR-GUARD DUAL-GATE HOOK" in updated_content
+
+    # Backup should exist
+    bak_file = mock_git_repo / "CLAUDE.md.guard.bak"
+    assert bak_file.exists()
+    assert bak_file.read_text(encoding="utf-8") == user_rules
+
+    # Uninstall should restore original content
+    installer.uninstall(mode="agent")
+    restored_content = claude_md.read_text(encoding="utf-8")
+    assert restored_content == user_rules
+
+
+def test_cli_hook_install_workspace_selective(tmp_path):
+    workspace = tmp_path / "workspace_test"
+    workspace.mkdir()
+
+    repo_a = workspace / "repo_a"
+    repo_a.mkdir()
+    (repo_a / ".git" / "hooks").mkdir(parents=True)
+
+    repo_b = workspace / "repo_b"
+    repo_b.mkdir()
+    (repo_b / ".git" / "hooks").mkdir(parents=True)
+
+    # Test selecting only repo_a
+    result = runner.invoke(app, ["hook", "install", "--repo", str(workspace), "--select-repos", "1"])
+    assert result.exit_code == 0
+    assert "Hybrid Workspace Protection Active" in result.stdout
+    assert (repo_a / ".git" / "hooks" / "pre-commit").exists()
+    assert not (repo_b / ".git" / "hooks" / "pre-commit").exists()
+    # Agent directives installed at workspace root
+    assert (workspace / "CLAUDE.md").exists()

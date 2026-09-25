@@ -84,3 +84,35 @@ def test_session_lifecycle(temp_repo):
     # 3. Clear session
     mgr.clear()
     assert mgr.load_session() is None
+
+
+def test_session_parent_walk_up(tmp_path):
+    workspace = tmp_path / "workspace"
+    sub_repo = workspace / "services" / "api"
+    sub_repo.mkdir(parents=True)
+
+    ws_mgr = SessionManager(workspace)
+    triage = LayaTriageResult(
+        domain=DomainType.BACKEND,
+        intent=TaskIntent.FEATURE,
+        risk_level=RiskLevel.LOW,
+        risk_score_label="1/4 (Low)",
+        core_breach_risk=False,
+        latency_ms=0.5,
+    )
+    ws_session = ws_mgr.start_pre_session(
+        prompt="Workspace task across sub-repos",
+        triage=triage,
+        expected_files=["services/api/main.py"],
+        contracts=[],
+        invariants=[],
+    )
+
+    # Sub-repo SessionManager should discover the parent workspace session via walk-up
+    sub_mgr = SessionManager(sub_repo)
+    discovered = sub_mgr.load_session()
+    assert discovered is not None
+    assert discovered.session_id == ws_session.session_id
+    assert discovered.pre.prompt == "Workspace task across sub-repos"
+
+    ws_mgr.clear()

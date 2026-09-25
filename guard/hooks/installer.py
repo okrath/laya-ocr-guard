@@ -39,6 +39,48 @@ class HookInstaller:
     def is_git_repo(self) -> bool:
         return (self.repo_path / ".git").is_dir()
 
+    def find_child_git_repos(self, max_depth: int = 3) -> List[Path]:
+        """
+        Recursively discover all child Git repositories within the workspace.
+        Excludes noisy build, dependency, and cache directories.
+        """
+        if not self.repo_path.is_dir():
+            return []
+
+        ignored_names = {
+            "node_modules", ".venv", "venv", "env", ".env", "dist", "build",
+            "__pycache__", ".git", ".idea", ".vscode", ".pytest_cache"
+        }
+
+        discovered: List[Path] = []
+
+        def _scan(current: Path, depth: int):
+            if depth > max_depth:
+                return
+            try:
+                for entry in current.iterdir():
+                    if not entry.is_dir() or entry.name in ignored_names:
+                        continue
+                    if (entry / ".git").is_dir():
+                        discovered.append(entry.resolve())
+                        continue
+                    _scan(entry, depth + 1)
+            except (PermissionError, OSError):
+                pass
+
+        _scan(self.repo_path, 1)
+        return sorted(discovered)
+
+    def install_multi(self, target_repos: List[Path], mode: str = "git") -> Dict[str, Any]:
+        """
+        Install Git hooks into multiple discovered Git repositories.
+        """
+        results: Dict[str, Any] = {}
+        for r in target_repos:
+            sub_installer = HookInstaller(r)
+            success, msgs = sub_installer.install(mode=mode)
+            results[str(r)] = {"success": success, "messages": msgs}
+        return results
     def _ensure_git_exclude(self) -> bool:
         """
         Ensure .guard/ directory is ignored in .git/info/exclude (Stealth local ignore).
@@ -221,18 +263,34 @@ class HookInstaller:
                 messages.append(f"Removed Agent harness wrapper: {agent_file}")
 
             # Clean directives from CLAUDE.md & AGENT.md
+            # Clean directives from CLAUDE.md & AGENT.md (Safe restore / preserve user content)
+            start_marker = "<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: START === -->"
+            end_marker = "<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: END === -->"
             for doc_path in [self.claude_md_path, self.agent_md_path]:
-                bak_path = doc_path.with_suffix(".guard.bak")
+                bak_path_new = doc_path.with_name(f"{doc_path.name}.guard.bak")
+                bak_path_legacy = doc_path.with_suffix(".guard.bak")
+                bak_path = bak_path_new if bak_path_new.exists() else bak_path_legacy
                 if bak_path.exists():
                     doc_path.unlink(missing_ok=True)
                     bak_path.rename(doc_path)
+                    if bak_path == bak_path_new and bak_path_legacy.exists():
+                        bak_path_legacy.unlink(missing_ok=True)
                     messages.append(f"Restored previous {doc_path.name} from backup")
                 elif doc_path.exists():
                     content = doc_path.read_text(encoding="utf-8", errors="ignore")
-                    if content.strip() == AGENT_DIRECTIVES_TEMPLATE.strip():
+                    if start_marker in content and end_marker in content:
+                        before = content.split(start_marker)[0].rstrip()
+                        after = content.split(end_marker)[1].lstrip()
+                        remaining = (before + "\n\n" + after).strip()
+                        if remaining:
+                            doc_path.write_text(remaining + "\n", encoding="utf-8")
+                            messages.append(f"Cleaned Guard directives from {doc_path.name}, preserved user directives")
+                        else:
+                            doc_path.unlink()
+                            messages.append(f"Removed Guard-generated {doc_path.name}")
+                    elif "LAYA-OCR-GUARD" in content or content.strip() == AGENT_DIRECTIVES_TEMPLATE.strip():
                         doc_path.unlink()
                         messages.append(f"Removed Guard-generated {doc_path.name}")
-
         return True, messages
 
     def _write_hook_file(self, target_path: Path, script_content: str):
@@ -252,18 +310,23 @@ class HookInstaller:
             pass
 
     def _inject_directive(self, target_path: Path):
+        directive_block = (
+            f"\n\n<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: START === -->\n"
+            f"{AGENT_DIRECTIVES_TEMPLATE.strip()}\n"
+            f"<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: END === -->\n"
+        )
         if target_path.exists():
             existing_content = target_path.read_text(encoding="utf-8", errors="ignore")
             if "LAYA-OCR-GUARD" in existing_content:
-                return  # Already injected
+                return  # Already injected, never duplicate
 
-            # Backup original
-            backup_path = target_path.with_suffix(".guard.bak")
+            # Backup original user directives before modifying
+            backup_path = target_path.with_name(f"{target_path.name}.guard.bak")
             if not backup_path.exists():
                 backup_path.write_text(existing_content, encoding="utf-8")
 
-            # Append directive
-            new_content = existing_content.rstrip() + "\n\n" + AGENT_DIRECTIVES_TEMPLATE
+            # STRICT SAFE APPEND: Never overwrite user content!
+            new_content = existing_content.rstrip() + directive_block
             target_path.write_text(new_content, encoding="utf-8")
         else:
-            target_path.write_text(AGENT_DIRECTIVES_TEMPLATE, encoding="utf-8")
+            target_path.write_text(directive_block.strip() + "\n", encoding="utf-8")

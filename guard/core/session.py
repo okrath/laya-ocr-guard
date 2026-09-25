@@ -133,15 +133,57 @@ class SessionManager:
         except Exception:
             pass
 
+    def _get_global_active_session_file(self) -> Path:
+        base = Path.home() / ".guard" / "sessions"
+        base.mkdir(parents=True, exist_ok=True)
+        return base / "active_session.json"
+
     def load_session(self) -> Optional[GuardSession]:
-        if not self.session_file.exists():
-            return None
+        # 1. Local workspace session
+        if self.session_file.is_file():
+            try:
+                with open(self.session_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return GuardSession.model_validate(data)
+            except Exception:
+                pass
+
+        # 2. Parent directory walk-up (for monorepo sub-repos up to 4 levels)
+        curr = self.repo_path.parent
+        for _ in range(4):
+            parent_session = curr / ".guard" / "session.json"
+            if parent_session.is_file():
+                try:
+                    with open(parent_session, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        return GuardSession.model_validate(data)
+                except Exception:
+                    pass
+            if curr.parent == curr:
+                break
+            curr = curr.parent
+
+        # 3. Global active session fallback (~/.guard/sessions/active_session.json)
+        # Only adopt if current directory is inside or identical to the session's workspace
         try:
-            with open(self.session_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return GuardSession.model_validate(data)
+            global_file = self._get_global_active_session_file()
+            if global_file.is_file():
+                with open(global_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    sess = GuardSession.model_validate(data)
+                    if sess.repo_path:
+                        sess_rp = Path(sess.repo_path).resolve()
+                        curr_rp = self.repo_path.resolve()
+                        try:
+                            if curr_rp == sess_rp or curr_rp.is_relative_to(sess_rp):
+                                return sess
+                        except AttributeError:
+                            import os
+                            if curr_rp == sess_rp or str(curr_rp).startswith(str(sess_rp) + os.sep):
+                                return sess
         except Exception:
-            return None
+            pass
+        return None
 
     def start_pre_session(
         self,
@@ -201,6 +243,26 @@ class SessionManager:
                 self.session_file.unlink()
             except Exception:
                 pass
+        try:
+            global_file = self._get_global_active_session_file()
+            if global_file.is_file():
+                with open(global_file, "r", encoding="utf-8") as f:
+                    g_data = json.load(f)
+                g_repo = g_data.get("repo_path")
+                if g_repo:
+                    g_rp = Path(g_repo).resolve()
+                    curr_rp = self.repo_path.resolve()
+                    try:
+                        if curr_rp == g_rp or curr_rp.is_relative_to(g_rp):
+                            global_file.unlink(missing_ok=True)
+                    except AttributeError:
+                        import os
+                        if curr_rp == g_rp or str(curr_rp).startswith(str(g_rp) + os.sep):
+                            global_file.unlink(missing_ok=True)
+                else:
+                    global_file.unlink(missing_ok=True)
+        except Exception:
+            pass
 
     def _save(self, session: GuardSession):
         self.guard_dir.mkdir(parents=True, exist_ok=True)
@@ -212,3 +274,12 @@ class SessionManager:
         except Exception:
             if temp_file.exists():
                 temp_file.unlink(missing_ok=True)
+        # Sync to global active session for cross-workspace/cross-repo discovery
+        try:
+            global_file = self._get_global_active_session_file()
+            global_temp = global_file.with_suffix(".tmp")
+            with open(global_temp, "w", encoding="utf-8") as f:
+                f.write(session.model_dump_json(indent=2))
+            global_temp.replace(global_file)
+        except Exception:
+            pass
