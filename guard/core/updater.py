@@ -11,6 +11,7 @@ Implements Supply-Chain Backdoor Protection (Quarantine Period):
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -193,17 +194,90 @@ def perform_ocr_upgrade(force: bool = False, quarantine_days: float = 3.0) -> Tu
 
 def perform_self_upgrade() -> Tuple[bool, str]:
     """
-    Upgrades laya-ocr-guard itself from GitHub using pip.
+    Upgrades laya-ocr-guard itself from GitHub.
+    Intelligently detects if installed via pipx or standard pip,
+    uses --force/--force-reinstall to bypass cached builds, and handles
+    Windows file locking on guard.exe with atomic fallback.
     """
-    pip_cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "git+https://github.com/okrath/laya-ocr-guard.git"]
+    repo_url = "git+https://github.com/okrath/laya-ocr-guard.git"
+    is_pipx = (
+        "pipx" in sys.prefix.lower()
+        or "pipx" in sys.executable.lower()
+        or bool(os.environ.get("PIPX_HOME"))
+        or bool(os.environ.get("PIPX_BIN_DIR"))
+    )
+    pipx_bin = shutil.which("pipx")
+
+    if is_pipx and pipx_bin:
+        cmd = [pipx_bin, "install", repo_url, "--force"]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+            if proc.returncode == 0:
+                return True, "✅ Successfully upgraded Laya-OCR-Guard via pipx!"
+            err_out = (proc.stderr or "") + (proc.stdout or "")
+            return False, f"pipx upgrade failed: {err_out}"
+        except Exception as e:
+            return False, f"Error upgrading guard via pipx: {str(e)}"
+
+    # Standard pip fallback with --force-reinstall and Windows binary lock mitigation
+    pip_cmd = [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--upgrade",
+        "--force-reinstall",
+        "--no-cache-dir",
+        repo_url,
+    ]
+
+    exe_renamed: Optional[Tuple[Path, Path]] = None
+    if sys.platform == "win32":
+        guard_bin = shutil.which("guard")
+        if guard_bin:
+            guard_path = Path(guard_bin)
+            if guard_path.suffix.lower() == ".exe" and guard_path.exists():
+                bak_path = guard_path.with_name(f"{guard_path.stem}.old.exe")
+                try:
+                    if bak_path.exists():
+                        try:
+                            bak_path.unlink()
+                        except Exception:
+                            pass
+                    guard_path.rename(bak_path)
+                    exe_renamed = (guard_path, bak_path)
+                except Exception:
+                    pass
+
     try:
         proc = subprocess.run(pip_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         if proc.returncode == 0:
+            if exe_renamed:
+                # Only unlink backup if new executable was actually created
+                if exe_renamed[0].exists():
+                    try:
+                        exe_renamed[1].unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                else:
+                    # Restore backup if new exe is missing
+                    try:
+                        exe_renamed[1].rename(exe_renamed[0])
+                    except Exception:
+                        pass
             return True, "✅ Successfully upgraded Laya-OCR-Guard from GitHub repository!"
+
         err_out = (proc.stderr or "") + (proc.stdout or "")
         return False, f"pip upgrade failed: {err_out}"
-    except Exception as e:
+    except BaseException as e:
         return False, f"Error upgrading guard: {str(e)}"
+    finally:
+        # Guarantee safety: any failure/interrupt where guard.exe is missing restores from backup
+        if exe_renamed and exe_renamed[1].exists() and not exe_renamed[0].exists():
+            try:
+                exe_renamed[1].rename(exe_renamed[0])
+            except Exception:
+                pass
 def get_update_cache_path() -> Path:
     return Path.home() / ".guard" / "update_cache.json"
 

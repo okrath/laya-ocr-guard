@@ -160,3 +160,87 @@ def test_get_cached_update_notice(tmp_path):
         assert notice is not None
         assert "A new version of guard is available" in notice
         assert "v9.9.9" in notice
+
+
+def test_perform_self_upgrade_pipx():
+    from guard.core.updater import perform_self_upgrade
+
+    mock_proc = MagicMock()
+    mock_proc.returncode = 0
+
+    with patch("sys.prefix", "C:/Users/Admin/.local/pipx/venvs/laya-ocr-guard"), \
+         patch("shutil.which", return_value="C:/pipx/pipx.exe"), \
+         patch("subprocess.run", return_value=mock_proc) as mock_run:
+        success, msg = perform_self_upgrade()
+        assert success is True
+        assert "pipx" in msg
+        called_cmd = mock_run.call_args[0][0]
+        assert "install" in called_cmd
+        assert "--force" in called_cmd
+
+
+def test_perform_self_upgrade_pip_fallback():
+    from guard.core.updater import perform_self_upgrade
+
+    mock_proc = MagicMock()
+    mock_proc.returncode = 0
+
+    with patch("sys.prefix", "C:/Python311"), \
+         patch("sys.executable", "C:/Python311/python.exe"), \
+         patch("shutil.which", return_value=None), \
+         patch("subprocess.run", return_value=mock_proc) as mock_run:
+        success, msg = perform_self_upgrade()
+        assert success is True
+        called_cmd = mock_run.call_args[0][0]
+        assert "--force-reinstall" in called_cmd
+        assert "--no-cache-dir" in called_cmd
+
+
+def test_perform_self_upgrade_windows_fail_restores(tmp_path):
+    from pathlib import Path
+    from guard.core.updater import perform_self_upgrade
+
+    exe_path = tmp_path / "guard.exe"
+    exe_path.write_text("old_binary", encoding="utf-8")
+
+    mock_proc = MagicMock()
+    mock_proc.returncode = 1
+    mock_proc.stderr = "pip network failure"
+
+    with patch("sys.platform", "win32"), \
+         patch("sys.prefix", "C:/Python311"), \
+         patch("shutil.which", return_value=str(exe_path)), \
+         patch("subprocess.run", return_value=mock_proc):
+        success, msg = perform_self_upgrade()
+        assert success is False
+        assert "pip upgrade failed" in msg
+        # Binary must be restored
+        assert exe_path.exists()
+        assert exe_path.read_text(encoding="utf-8") == "old_binary"
+
+
+def test_perform_self_upgrade_windows_success_clean(tmp_path):
+    from pathlib import Path
+    from guard.core.updater import perform_self_upgrade
+
+    exe_path = tmp_path / "guard.exe"
+    exe_path.write_text("old_binary", encoding="utf-8")
+
+    def fake_pip_install(*args, **kwargs):
+        # Simulate pip creating the new binary
+        exe_path.write_text("new_binary", encoding="utf-8")
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        return mock_res
+
+    with patch("sys.platform", "win32"), \
+         patch("sys.prefix", "C:/Python311"), \
+         patch("shutil.which", return_value=str(exe_path)), \
+         patch("subprocess.run", side_effect=fake_pip_install):
+        success, msg = perform_self_upgrade()
+        assert success is True
+        assert exe_path.exists()
+        assert exe_path.read_text(encoding="utf-8") == "new_binary"
+        # Old backup should be unlinked
+        bak_path = tmp_path / "guard.old.exe"
+        assert not bak_path.exists()
