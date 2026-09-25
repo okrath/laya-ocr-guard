@@ -12,6 +12,7 @@ The architecture strictly decouples reflexive, deterministic, and generative res
 | :--- | :--- | :--- | :--- | :--- |
 | **Laya** (System 1 Engine) | Non-autoregressive Transformer Classifier / Heuristic Matrix | Sub-30ms (Neural) / <1ms (Reflex) | **0 tokens ($0.00)** | Instant intent triage, platform domain routing, risk scoring (1–4), and post-task invariant verification. |
 | **Alibaba Open Code Review (OCR)** | Deterministic AST & Git Diff Inspector | Sub-50ms (Local) | **0 tokens ($0.00)** | Precise git diff measurement, blast-radius enforcement (out-of-scope breach detection), and multi-language deterministic static rules. |
+| **Hygiene Engine** | AST & Reference Reachability Scanner | <50ms (Diff) / <2s (Full) | **0 tokens ($0.00)** | Two-tier dead code detection: catches orphan/draft files (DEAD-001), commented-out code blocks (DEAD-002), and AST unreferenced symbols/imports (DEAD-003). |
 | **Your Configured LLM** | Autoregressive Model (Claude, GPT, DeepSeek, Ollama) | 2–60 seconds | User standard pricing | Contract extraction during pre-task and **Final Safety Gatekeeper** auditing technical architecture, memory leaks, and UX ergonomics. |
 
 ---
@@ -36,6 +37,7 @@ The architecture strictly decouples reflexive, deterministic, and generative res
 │ 2. POST-TASK PHASE: `guard post`                            │
 │ • OCR Inspector (0-cost): Diff audit & blast radius check   │
 │ • Static Rulebook: Detect Secrets, SQLi, Memory Leaks, NPE  │
+│ • Hygiene Engine: Orphan files, commented code, dead symbols│
 │ • Project Health Check: Automated compile & test execution  │
 │ • Laya Scoring (0-cost): Score invariant compliance (Yes/No)│
 │ ➔ Compiles: "### 🧪 POST-TASK VERIFICATION"                 │

@@ -39,6 +39,7 @@ Automates and enforces the rigorous **Impact & Regression Protocol** pioneered i
 │ 2. POST-TASK PHASE: `guard post`                            │
 │ • OCR Inspector (0-cost): Diff audit & blast radius check   │
 │ • Static Rulebook: Detect Secrets, SQLi, Memory Leaks, NPE  │
+│ • Hygiene Engine (0-cost): Detects orphan files & dead code │
 │ • Project Health Check: Automated compile & test execution  │
 │ • Laya Scoring (0-cost): Score invariant compliance (Yes/No)│
 │ ➔ Compiles: "### 🧪 POST-TASK VERIFICATION"                 │
@@ -134,6 +135,22 @@ guard config test
 
 ---
 
+## 🧹 Code Hygiene & Dead Code Gate
+
+AI coding agents often leave behind code rot: scratchpad files, commented-out dead code blocks, and unreferenced helper functions. `guard` prevents codebase rot via a **Two-Tier Hygiene Scanner**:
+
+| Rule ID | Severity | Inspection Rule | Detection Target |
+| :--- | :--- | :--- | :--- |
+| **`DEAD-001`** | `HIGH` / `MEDIUM` | **Orphan & Draft Files** | Unreferenced newly added files or draft names (`*.tmp`, `*backup*`, `temp_*`, `test_scratch*`). |
+| **`DEAD-002`** | `MEDIUM` | **Commented-Out Code** | Blocks of 3+ consecutive lines of commented source code instead of clean Git deletion. |
+| **`DEAD-003`** | `MEDIUM` / `LOW` | **Unused Symbols & Imports** | AST analysis flags unreferenced private helpers (`def _foo`) and unused imported symbols. |
+
+### Two-Tier Execution Strategy:
+1. **Commit-Level (Diff-Level, <50ms):** Automatically runs during `guard post` and Git hooks. Checks newly added files for orphan status and diff additions (`+`) for commented-out code.
+2. **Focus-Level (Full-File Deep Scan):** Triggered via `--focus dead-code`. Scans entire touched files and AST to detect all unreferenced helpers, unused imports, and zombie code blocks.
+
+---
+
 ## 📖 CLI Usage Workflows
 
 ### 1. Bind Hooks to Any Target Repository (`guard hook`)
@@ -159,9 +176,13 @@ guard pre "Refactor checkout button to sticky bottom on mobile, update CSS and r
 ### 3. Post-Task Phase (`guard post`)
 Execute after code modifications are complete:
 ```bash
+# Standard verification:
 guard post
+
+# Deep focus on code hygiene & dead code:
+guard post --focus dead-code
 ```
-*Output:* Inspects git diff, detects out-of-scope files, scans Alibaba OCR rules, executes automated build/test commands, scores invariant compliance via Laya, and requests **Final Gate Approval from your configured LLM** (`APPROVED` or `REVISE`) in `.guard/POST_TASK_REPORT.md`.
+*Output:* Inspects git diff, detects out-of-scope files, scans Alibaba OCR rules and code hygiene, executes automated build/test commands, scores invariant compliance via Laya, and requests **Final Gate Approval from your configured LLM** (`APPROVED` or `REVISE`) in `.guard/POST_TASK_REPORT.md`.
 
 ### 4. Automated Sandwich Pattern Execution (`guard run`)
 Wraps any developer or agent command in pre- and post-task gates:
@@ -172,7 +193,11 @@ guard run "Add shipping fee calculation endpoint" -- git status
 ### 5. On-Demand LLM Code Review (`guard review`)
 Run an immediate architectural and safety review on the current Git diff:
 ```bash
+# Standard on-demand review:
 guard review
+
+# Focused review on code hygiene & orphan files:
+guard review --focus dead-code
 ```
 
 ### 6. Supply-Chain Security & Safe Updates (`guard update`)
@@ -195,7 +220,7 @@ guard update self
 
 ## 🧪 Running the Test Suite
 
-The project includes an end-to-end integration and unit test suite (45+ tests):
+The project includes an end-to-end integration and unit test suite (55+ tests):
 
 ```bash
 pytest

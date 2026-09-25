@@ -200,7 +200,7 @@
     <section id="quality-matrix">
       <h2>3. 2D Quality Matrix: Platform Domains × Quality Pillars</h2>
       <p>
-        Instead of only checking syntax, Guard evaluates code across a two-dimensional matrix combining <strong>4 Platform Domains</strong> and <strong>5 Cross-Cutting Quality Pillars</strong>.
+        Instead of only checking syntax, Guard evaluates code across a two-dimensional matrix combining <strong>4 Platform Domains</strong> and <strong>6 Cross-Cutting Quality Pillars</strong>.
       </p>
       <table>
         <thead>
@@ -211,6 +211,7 @@
             <th>⚡ Performance</th>
             <th>🧱 Integrity &amp; Schema</th>
             <th>♿ UX &amp; Ergonomics</th>
+            <th>🧹 Code Hygiene</th>
           </tr>
         </thead>
         <tbody>
@@ -221,6 +222,7 @@
             <td>Blocking sync I/O, re-render lag</td>
             <td>UI states (loading, disabled)</td>
             <td>Escape key, backdrop, mobile view</td>
+            <td>Orphan components, commented JSX blocks</td>
           </tr>
           <tr>
             <td><strong>Backend</strong> (Go, Python, Rust, Nest)</td>
@@ -229,6 +231,7 @@
             <td>N+1 queries, async blocking</td>
             <td>JSON Schema compatibility, ACID</td>
             <td>Standardized error codes &amp; status</td>
+            <td>Unused imports, dead helper functions</td>
           </tr>
           <tr>
             <td><strong>Infra / DevOps</strong> (Docker, K8s, Terraform)</td>
@@ -237,6 +240,7 @@
             <td>Fast startup, lightweight images</td>
             <td>Zero-downtime rolling updates</td>
             <td>Liveness &amp; readiness probe health</td>
+            <td>Orphan compose files, stale scripts</td>
           </tr>
           <tr>
             <td><strong>Mobile</strong> (Flutter, React Native, Swift)</td>
@@ -245,6 +249,7 @@
             <td>Smooth 60/120 FPS, battery efficiency</td>
             <td>Offline cache synchronization</td>
             <td>SafeArea boundaries, dynamic notch</td>
+            <td>Unused assets, commented native bridges</td>
           </tr>
         </tbody>
       </table>
