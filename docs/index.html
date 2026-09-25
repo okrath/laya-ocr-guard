@@ -253,7 +253,10 @@
       <p>
         By default, all 5 quality pillars are audited at 100% rigor. When investigating specific defects, use the <code>--focus</code> flag to direct the LLM gate's analytical scrutiny:
       </p>
-      <pre><code># Scrutinize memory leaks (listeners, unclosed handles):
+<pre><code># Scrutinize dead code, zombie blocks & orphan files:
+guard review --focus dead-code
+
+# Scrutinize memory leaks (listeners, unclosed handles):
 guard review --focus memory
 
 # Scrutinize security vulnerabilities (SQLi, XSS, secrets):

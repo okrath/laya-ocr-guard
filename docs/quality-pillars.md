@@ -55,13 +55,21 @@ M ├──────────────┼──────────
 - **Responsive Layout**: Verifies CSS layouts adapt across Mobile (390px), Tablet, and Desktop (1440px) without horizontal scrollbar overflow.
 - **Visual Feedback**: Enforces visual state feedback (spinners, skeletons, disabled states) during asynchronous operations.
 
+### Pillar 6: 🧹 Code & Asset Hygiene (Dead Code Gate)
+- **Orphan & Draft Files (`DEAD-001`)**: Detects unreferenced newly added files and scratchpad artifacts (`*.tmp`, `*backup*`, `temp_*`).
+- **Commented-out Code (`DEAD-002`)**: Detects stale blocks of commented-out source code (3+ lines) instead of clean Git deletions.
+- **Unused Local Helpers & Imports (`DEAD-003`)**: Flags unreferenced private helper functions and unused imported symbols.
+
 ---
 
 ## 3. Scrutiny Focus Flag (`--focus`)
 
-By default, Guard verifies all 5 quality pillars simultaneously (`--focus all`). To instruct the LLM Gatekeeper to conduct a specialized deep-dive:
+By default, Guard verifies quality pillars simultaneously (`--focus all`). To instruct the LLM Gatekeeper to conduct a specialized deep-dive:
 
 ```bash
+# Deep-dive on dead code, zombie blocks & orphan files:
+guard review --focus dead-code
+
 # Deep-dive on memory leaks & resource cleanup:
 guard review --focus memory
 

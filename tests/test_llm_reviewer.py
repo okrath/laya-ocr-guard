@@ -116,3 +116,39 @@ None
     assert parsed.verdict == ReviewVerdict.APPROVED
     assert len(parsed.technical_audit) == 2
     assert len(parsed.remediation_steps) == 0
+def test_reviewer_reject_on_dead_code_focus(reviewer):
+    diff = DiffSummary(
+        files=[FileDiffStat(path="temp_draft.py", status="added", insertions=10, deletions=0)],
+        raw_diff="diff --git a/temp_draft.py ...",
+    )
+    violations = [
+        RuleViolation(
+            rule_id="DEAD-001",
+            severity="HIGH",
+            file_path="temp_draft.py",
+            message="Temporary draft file detected.",
+        )
+    ]
+    # In normal mode without dead-code focus, score is penalized slightly
+    normal_verdict = reviewer.review(
+        prompt="Add feature",
+        domain=DomainType.BACKEND,
+        diff_summary=diff,
+        violations=violations,
+        use_llm=False,
+        focus="all",
+    )
+    assert normal_verdict.score >= 7.5
+
+    # In dead-code focus mode, DEAD-001 is a hard blocker
+    focus_verdict = reviewer.review(
+        prompt="Add feature",
+        domain=DomainType.BACKEND,
+        diff_summary=diff,
+        violations=violations,
+        use_llm=False,
+        focus="dead-code",
+    )
+    assert focus_verdict.verdict == ReviewVerdict.REVISE
+    assert focus_verdict.focus_area == "dead-code"
+    assert any("DEAD-001" in step for step in focus_verdict.remediation_steps)

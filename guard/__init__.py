@@ -3,5 +3,5 @@ Laya OCR Guard (guard)
 Dual-gate impact analysis & regression guard.
 """
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 __app_name__ = "guard"

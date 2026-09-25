@@ -29,6 +29,7 @@ from rich.table import Table
 from guard import __app_name__, __version__
 from guard.core.config import get_global_config_path, get_local_config_path, load_config, print_config_table
 from guard.core.laya_engine import DomainType, LayaEngine
+from guard.core.hygiene_engine import HygieneEngine
 from guard.core.llm_reviewer import LLMReviewerEngine, ReviewVerdict
 from guard.core.ocr_engine import GitDiffInspector, OCRRulebookRunner
 from guard.core.session import BuildCheckResult, PostTaskRecord, SessionManager
@@ -139,9 +140,17 @@ def execute_post_task(repo_path: Optional[Path] = None, auto_fix: bool = False, 
     raw_diff = diff_inspector.get_diff() or ""
     diff_summary = diff_inspector.parse_diff(raw_diff, expected_files=expected_files)
 
-    # 2. OCR Rulebook scan
+    # 2. OCR Rulebook & Code Hygiene scan (Two-tier: diff-level vs full-file focus)
     rulebook = OCRRulebookRunner()
     violations = rulebook.scan_diff(raw_diff)
+
+    hygiene = HygieneEngine(target_repo)
+    if (focus or "").lower() in ("dead-code", "hygiene"):
+        touched = [f.path for f in diff_summary.files]
+        hygiene_violations = hygiene.scan_focus_level(touched)
+    else:
+        hygiene_violations = hygiene.scan_diff_level(raw_diff, diff_summary)
+    violations.extend(hygiene_violations)
 
     # 3. Deterministic Build Check (0 token)
     build_cmd = detect_build_command(target_repo)
@@ -264,7 +273,7 @@ def pre_cmd(
 def post_cmd(
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
     auto_fix: bool = typer.Option(False, "--auto-fix", help="Trigger self-healing suggestions"),
-    focus: str = typer.Option("all", "--focus", "-f", help="Quality pillar focus: 'all', 'security', 'memory', 'performance', 'ux'"),
+    focus: str = typer.Option("all", "--focus", "-f", help="Quality pillar focus: 'all', 'security', 'memory', 'performance', 'ux', 'dead-code'"),
 ):
     """
     Run Post-Task Guard: diff audit, build checks, invariant scoring & LLM final verification.
@@ -428,7 +437,7 @@ def hook_status_cmd(
 @app.command("review")
 def review_cmd(
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
-    focus: str = typer.Option("all", "--focus", "-f", help="Quality pillar focus: 'all', 'security', 'memory', 'performance', 'ux'"),
+    focus: str = typer.Option("all", "--focus", "-f", help="Quality pillar focus: 'all', 'security', 'memory', 'performance', 'ux', 'dead-code'"),
 ):
     """
     Run Final Safety Review on current Git diff using the configured LLM.
@@ -444,6 +453,13 @@ def review_cmd(
     rulebook = OCRRulebookRunner()
     violations = rulebook.scan_diff(raw_diff)
 
+    hygiene = HygieneEngine(target_repo)
+    if (focus or "").lower() in ("dead-code", "hygiene"):
+        touched = [f.path for f in summary.files]
+        hygiene_violations = hygiene.scan_focus_level(touched)
+    else:
+        hygiene_violations = hygiene.scan_diff_level(raw_diff, summary)
+    violations.extend(hygiene_violations)
     cfg = load_config(target_repo)
     reviewer = LLMReviewerEngine(config=cfg)
     analyzer = detect_repo_domain(target_repo)

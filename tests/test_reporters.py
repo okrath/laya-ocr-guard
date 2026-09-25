@@ -97,3 +97,21 @@ def test_terminal_render_smoke(capsys):
         muse_score=9.8,
     )
     render_post_task_terminal(post, pre)
+def test_hygiene_violations_reporter():
+    post = PostTaskRecord(
+        files_modified=["temp_helper.py"],
+        rule_violations=[
+            RuleViolation(rule_id="DEAD-001", severity="HIGH", file_path="temp_helper.py", message="Temporary draft file"),
+            RuleViolation(rule_id="DEAD-002", severity="MEDIUM", file_path="temp_helper.py", line_number=5, message="Commented-out code"),
+        ],
+        all_passed=False,
+        muse_verdict="REVISE",
+        muse_score=5.0,
+    )
+    md = generate_post_task_markdown(post)
+    assert "Code & Asset Hygiene Alerts (Dead Code Gate):" in md
+    assert "DEAD-001" in md
+    assert "DEAD-002" in md
+
+    # Ensure terminal render handles hygiene table without errors
+    render_post_task_terminal(post)

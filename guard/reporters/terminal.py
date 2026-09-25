@@ -115,15 +115,31 @@ def render_post_task_terminal(post: PostTaskRecord, pre: Optional[PreTaskRecord]
             inv_table.add_row(c.id, c.description, v_text, c.notes)
         console.print(inv_table)
 
-    # OCR Rule Violations
+    # Rule Violations (OCR & Code Hygiene)
     if post.rule_violations:
-        viol_table = Table(title="🚨 Alibaba OCR Rulebook Violations", show_header=True, header_style="bold red")
-        viol_table.add_column("Rule ID", style="bold red", width=10)
-        viol_table.add_column("Severity", width=10)
-        viol_table.add_column("Location")
-        viol_table.add_column("Violation Message")
+        ocr_viols = [v for v in post.rule_violations if not v.rule_id.startswith("DEAD-")]
+        dead_viols = [v for v in post.rule_violations if v.rule_id.startswith("DEAD-")]
 
-        for v in post.rule_violations:
-            loc = f"{v.file_path}:{v.line_number}" if v.line_number else v.file_path
-            viol_table.add_row(v.rule_id, v.severity, loc, v.message)
-        console.print(viol_table)
+        if ocr_viols:
+            viol_table = Table(title="🚨 Alibaba OCR Rulebook Violations", show_header=True, header_style="bold red")
+            viol_table.add_column("Rule ID", style="bold red", width=10)
+            viol_table.add_column("Severity", width=10)
+            viol_table.add_column("Location")
+            viol_table.add_column("Violation Message")
+
+            for v in ocr_viols:
+                loc = f"{v.file_path}:{v.line_number}" if v.line_number else v.file_path
+                viol_table.add_row(v.rule_id, v.severity, loc, v.message)
+            console.print(viol_table)
+
+        if dead_viols:
+            hygiene_table = Table(title="🧹 Code & Asset Hygiene Audit (Dead Code Gate)", show_header=True, header_style="bold yellow")
+            hygiene_table.add_column("Rule ID", style="bold yellow", width=10)
+            hygiene_table.add_column("Severity", width=10)
+            hygiene_table.add_column("Location")
+            hygiene_table.add_column("Hygiene Issue & Recommendation")
+
+            for v in dead_viols:
+                loc = f"{v.file_path}:{v.line_number}" if v.line_number else v.file_path
+                hygiene_table.add_row(v.rule_id, v.severity, loc, v.message)
+            console.print(hygiene_table)

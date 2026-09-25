@@ -31,7 +31,7 @@ guard post [options]
 
 ### Options:
 * `-r, --repo <path>`: Target repository directory.
-* `-f, --focus <area>`: Quality pillar to focus scrutiny on (`all`, `security`, `memory`, `performance`, `ux`). Default: `all`.
+* `-f, --focus <area>`: Quality pillar to focus scrutiny on (`all`, `security`, `memory`, `performance`, `ux`, `dead-code`). Default: `all`.
 * `--auto-fix`: Trigger self-healing remediation suggestions if verification fails.
 
 ---
@@ -61,7 +61,7 @@ guard review [options]
 
 ### Options:
 * `-r, --repo <path>`: Target repository directory.
-* `-f, --focus <area>`: Quality pillar focus (`all`, `security`, `memory`, `performance`, `ux`).
+* `-f, --focus <area>`: Quality pillar focus (`all`, `security`, `memory`, `performance`, `ux`, `dead-code`).
 
 ---
 

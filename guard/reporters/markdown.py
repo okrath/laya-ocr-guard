@@ -78,12 +78,20 @@ def generate_post_task_markdown(post: PostTaskRecord, pre: Optional[PreTaskRecor
     else:
         md.append("  - ℹ️ No automated build command detected.")
 
-    # Rule Violations
+    # Rule Violations (OCR & Hygiene)
     if post.rule_violations:
-        md.append("\n* **Alibaba OCR Rulebook Alerts:**")
-        for v in post.rule_violations:
-            md.append(f"  - `[{v.severity}]` **{v.rule_id}**: {v.message} at `{v.file_path}`")
+        ocr_viols = [v for v in post.rule_violations if not v.rule_id.startswith("DEAD-")]
+        dead_viols = [v for v in post.rule_violations if v.rule_id.startswith("DEAD-")]
 
+        if ocr_viols:
+            md.append("\n* **Alibaba OCR Rulebook Alerts:**")
+            for v in ocr_viols:
+                md.append(f"  - `[{v.severity}]` **{v.rule_id}**: {v.message} at `{v.file_path}`")
+
+        if dead_viols:
+            md.append("\n* **Code & Asset Hygiene Alerts (Dead Code Gate):**")
+            for v in dead_viols:
+                md.append(f"  - `[{v.severity}]` **{v.rule_id}**: {v.message} at `{v.file_path}`")
     # Invariants Compliance
     if post.invariant_result:
         md.append("\n* **Invariant Verification (Laya Scoring):**")

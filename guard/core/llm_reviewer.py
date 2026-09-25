@@ -142,7 +142,16 @@ class LLMReviewerEngine:
                 tech_notes.append(f"Stability Warning [{hv.rule_id}]: {hv.message} ({hv.file_path})")
                 remediation.append(f"Resolve stability/performance warning {hv.rule_id} in `{hv.file_path}`")
 
-        # Check 4: Invariants (CRITICAL: Invariant violation is a HARD BLOCKER)
+        # Check 4: Code Hygiene & Dead Code Violations
+        dead_violations = [v for v in violations if v.rule_id.startswith("DEAD-")]
+        if dead_violations:
+            weight = 2.0 if focus in ("dead-code", "hygiene") else 0.8
+            score -= weight * len(dead_violations)
+            for dv in dead_violations:
+                tech_notes.append(f"Hygiene Alert [{dv.rule_id}]: {dv.message} ({dv.file_path})")
+                remediation.append(f"Clean up code hygiene issue [{dv.rule_id}]: {dv.message} in `{dv.file_path}`")
+
+        # Check 5: Invariants (CRITICAL: Invariant violation is a HARD BLOCKER)
         invariant_violated = False
         if invariant_result:
             if invariant_result.all_passed:
@@ -157,7 +166,8 @@ class LLMReviewerEngine:
 
         score = max(0.0, min(10.0, score))
         
-        is_hard_blocked = invariant_violated or bool(crit_violations) or (build_check is not None and not build_check.passed) or (diff_summary is not None and bool(diff_summary.out_of_scope_files))
+        hygiene_blocked = focus in ("dead-code", "hygiene") and bool(dead_violations)
+        is_hard_blocked = invariant_violated or bool(crit_violations) or (build_check is not None and not build_check.passed) or (diff_summary is not None and bool(diff_summary.out_of_scope_files)) or hygiene_blocked
         verdict = ReviewVerdict.APPROVED if (score >= 7.5 and not is_hard_blocked) else ReviewVerdict.REVISE
 
         summary = (
@@ -206,6 +216,8 @@ class LLMReviewerEngine:
             focus_instruction = "CRITICAL FOCUS ON PERFORMANCE & LATENCY: Rigorously audit for blocking synchronous I/O, N+1 query patterns, excessive re-renders, and thread lockups."
         elif focus == "ux":
             focus_instruction = "CRITICAL FOCUS ON ERGONOMICS & UX: Rigorously audit for broken keyboard shortcuts, modal backdrop handling, viewport responsiveness, and visual state feedback."
+        elif focus in ("dead-code", "hygiene"):
+            focus_instruction = "CRITICAL FOCUS ON CODE HYGIENE & DEAD CODE: Rigorously audit for orphan/unused files, commented-out blocks of code, unused imports, unreferenced helper functions/variables, redundant duplicate logic, and obsolete scratchpad or temporary files."
         else:
             focus_instruction = "FULL 360-DEGREE AUDIT: Evaluate across all 5 Quality Pillars (Security, Memory Safety, Performance, Data Integrity, Ergonomics/UX)."
 
