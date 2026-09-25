@@ -415,8 +415,8 @@ def hook_install_cmd(
             for idx, cr in enumerate(child_repos, start=1):
                 rel = cr.relative_to(target_path)
                 console.print(f"  [bold yellow][{idx}][/bold yellow] ./{rel} [dim](.git)[/dim]")
-            console.print("  [bold green][A][/bold green] All repositories (Cài tất cả)")
-            console.print("  [dim][N][/dim] None (Bỏ qua Git hooks, chỉ cài Agent directives tại gốc workspace)\n")
+            console.print("  [bold green][A][/bold green] All repositories (Install to all child repos)")
+            console.print("  [dim][N][/dim] None (Skip Git hooks, install workspace Agent Directives at root only)\n")
 
             # Respect --mode / --stealth in workspace mode
             effective_mode = "git" if stealth else (mode.lower().strip() if mode else "all")

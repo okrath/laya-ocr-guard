@@ -230,9 +230,14 @@ def check_guard_self_update(timeout: float = 3.0, force: bool = False) -> Versio
             pass
 
     url = "https://raw.githubusercontent.com/okrath/laya-ocr-guard/main/pyproject.toml"
+    headers = {"User-Agent": f"guard-cli/{installed}"}
+    if force:
+        url += f"?_t={int(time.time())}"
+        headers["Cache-Control"] = "no-cache"
+        headers["Pragma"] = "no-cache"
     try:
         with httpx.Client(timeout=timeout) as client:
-            res = client.get(url, headers={"User-Agent": f"guard-cli/{installed}"})
+            res = client.get(url, headers=headers)
             if res.status_code != 200:
                 return VersionCheckResult(
                     package_name=package_name,
