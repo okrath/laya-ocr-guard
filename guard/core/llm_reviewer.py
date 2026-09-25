@@ -150,8 +150,22 @@ class LLMReviewerEngine:
             for dv in dead_violations:
                 tech_notes.append(f"Hygiene Alert [{dv.rule_id}]: {dv.message} ({dv.file_path})")
                 remediation.append(f"Clean up code hygiene issue [{dv.rule_id}]: {dv.message} in `{dv.file_path}`")
+        # Check 5: Simplicity & Engineering Frugality (KISS & YAGNI)
+        lazy_violations = [v for v in violations if v.rule_id.startswith("LAZY-")]
+        if lazy_violations:
+            weight = 2.5 if focus in ("simplicity", "yagni", "lazy") else 1.0
+            score -= weight * len(lazy_violations)
+            for lv in lazy_violations:
+                tech_notes.append(f"Simplicity Alert [{lv.rule_id}]: {lv.message} ({lv.file_path})")
+                remediation.append(f"Apply KISS/YAGNI to resolve [{lv.rule_id}]: {lv.message} in `{lv.file_path}`")
 
-        # Check 5: Invariants (CRITICAL: Invariant violation is a HARD BLOCKER)
+        # Bonus: Net Negative LOC (Technical Debt Paid Off)
+        if diff_summary and diff_summary.total_deletions > diff_summary.total_insertions and diff_summary.total_deletions >= 10:
+            net_loc = diff_summary.total_insertions - diff_summary.total_deletions
+            score = min(10.0, score + 0.5)
+            tech_notes.append(f"⭐ Code Debt Reduction: Net {net_loc} LOC (Deleting code pays off technical debt).")
+
+        # Check 6: Invariants (CRITICAL: Invariant violation is a HARD BLOCKER)
         invariant_violated = False
         if invariant_result:
             if invariant_result.all_passed:
@@ -167,7 +181,15 @@ class LLMReviewerEngine:
         score = max(0.0, min(10.0, score))
         
         hygiene_blocked = focus in ("dead-code", "hygiene") and bool(dead_violations)
-        is_hard_blocked = invariant_violated or bool(crit_violations) or (build_check is not None and not build_check.passed) or (diff_summary is not None and bool(diff_summary.out_of_scope_files)) or hygiene_blocked
+        simplicity_blocked = focus in ("simplicity", "yagni", "lazy") and bool(lazy_violations)
+        is_hard_blocked = (
+            invariant_violated
+            or bool(crit_violations)
+            or (build_check is not None and not build_check.passed)
+            or (diff_summary is not None and bool(diff_summary.out_of_scope_files))
+            or hygiene_blocked
+            or simplicity_blocked
+        )
         verdict = ReviewVerdict.APPROVED if (score >= 7.5 and not is_hard_blocked) else ReviewVerdict.REVISE
 
         summary = (
@@ -218,6 +240,14 @@ class LLMReviewerEngine:
             focus_instruction = "CRITICAL FOCUS ON ERGONOMICS & UX: Rigorously audit for broken keyboard shortcuts, modal backdrop handling, viewport responsiveness, and visual state feedback."
         elif focus in ("dead-code", "hygiene"):
             focus_instruction = "CRITICAL FOCUS ON CODE HYGIENE & DEAD CODE: Rigorously audit for orphan/unused files, commented-out blocks of code, unused imports, unreferenced helper functions/variables, redundant duplicate logic, and obsolete scratchpad or temporary files."
+        elif focus in ("simplicity", "yagni", "lazy"):
+            focus_instruction = (
+                "CRITICAL FOCUS ON SIMPLICITY & PRODUCTIVE LAZINESS (KISS & YAGNI): "
+                "Act as the Laziest Senior Architect in the room. Ruthlessly audit for over-engineering, "
+                "unnecessary new dependencies, multi-layer abstractions for trivial logic, reinvented wheels, "
+                "and code that should not have been written. The best code is code you never write. "
+                "Demand the simplest one-liner, standard library, or native runtime solution."
+            )
         else:
             focus_instruction = "FULL 360-DEGREE AUDIT: Evaluate across all 5 Quality Pillars (Security, Memory Safety, Performance, Data Integrity, Ergonomics/UX)."
 

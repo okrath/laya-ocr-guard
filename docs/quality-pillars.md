@@ -62,6 +62,14 @@ M ├──────────────┼──────────
 - **Commented-out Code (`DEAD-002`)**: Detects stale blocks of commented-out source code (3+ lines) instead of clean Git deletions.
 - **Unused Local Helpers & Imports (`DEAD-003`)**: Flags unreferenced private helper functions and unused imported symbols.
 
+### Pillar 7: 🛋️ Simplicity & Engineering Frugality (KISS & YAGNI)
+*Inspired by Larry Wall's virtue of Laziness and Dietrich Gebert's Ponytail philosophy: "The best code is the code you never wrote."*
+- **The Ponytail Necessity Ladder**: Enforces evaluating tasks strictly from YAGNI (don't write code) ➔ Reuse existing code ➔ Use stdlib/native runtime ➔ Use installed dependencies ➔ Minimal one-liner code.
+- **Dependency Bloat Prevention (`LAZY-001`)**: Detects adding redundant npm or Python packages (`is-odd`, `uuid`, `mkdirp`, `rimraf`, `pathlib2`, `mock`) when native browser/Node or Python stdlib suffices.
+- **Premature Abstraction Prevention (`LAZY-002`)**: Flags single-use interfaces, over-engineered class hierarchies, and trivial pass-through wrapper functions.
+- **Wheel Reinvention Prevention (`LAZY-003`)**: Warns against re-implementing common utilities (`clamp`, `slugify`, `is_empty`, `flatten`, `deep_clone`) when stdlib or 1-liners suffice.
+- **Net Negative LOC Bonus**: Awards score bonuses and honors technical debt reduction when code deletion exceeds code addition.
+
 ---
 
 ## 3. Scrutiny Focus Flag (`--focus`)
@@ -69,6 +77,9 @@ M ├──────────────┼──────────
 By default, Guard verifies quality pillars simultaneously (`--focus all`). To instruct the LLM Gatekeeper to conduct a specialized deep-dive:
 
 ```bash
+# Deep-dive on KISS, YAGNI, over-engineering & dependency bloat:
+guard review --focus simplicity
+
 # Deep-dive on dead code, zombie blocks & orphan files:
 guard review --focus dead-code
 
@@ -84,6 +95,5 @@ guard review --focus performance
 # Deep-dive on responsive UX and keyboard shortcuts:
 guard review --focus ux
 ```
-
 ---
 *Created and maintained by [@okrath](https://github.com/okrath) &mdash; Source code available at [github.com/okrath/laya-ocr-guard](https://github.com/okrath/laya-ocr-guard).*

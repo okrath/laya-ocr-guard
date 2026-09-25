@@ -32,6 +32,7 @@ from guard.core.laya_engine import DomainType, LayaEngine
 from guard.core.hygiene_engine import HygieneEngine
 from guard.core.llm_reviewer import LLMReviewerEngine, ReviewVerdict
 from guard.core.ocr_engine import GitDiffInspector, OCRRulebookRunner
+from guard.core.simplicity_engine import SimplicityEngine
 from guard.core.session import BuildCheckResult, PostTaskRecord, SessionManager
 from guard.core.updater import UpdateSecurityStatus, check_ocr_update, perform_ocr_upgrade, perform_self_upgrade
 from guard.domains.detector import (
@@ -152,6 +153,13 @@ def execute_post_task(repo_path: Optional[Path] = None, auto_fix: bool = False, 
         hygiene_violations = hygiene.scan_diff_level(raw_diff, diff_summary)
     violations.extend(hygiene_violations)
 
+    simplicity = SimplicityEngine(target_repo)
+    if (focus or "").lower() in ("simplicity", "yagni", "lazy"):
+        touched = [f.path for f in diff_summary.files]
+        simplicity_violations = simplicity.scan_focus_level(touched)
+    else:
+        simplicity_violations = simplicity.scan_diff_level(raw_diff, diff_summary)
+    violations.extend(simplicity_violations)
     # 3. Deterministic Build Check (0 token)
     build_cmd = detect_build_command(target_repo)
     build_res: Optional[BuildCheckResult] = None
@@ -273,7 +281,7 @@ def pre_cmd(
 def post_cmd(
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
     auto_fix: bool = typer.Option(False, "--auto-fix", help="Trigger self-healing suggestions"),
-    focus: str = typer.Option("all", "--focus", "-f", help="Quality pillar focus: 'all', 'security', 'memory', 'performance', 'ux', 'dead-code'"),
+    focus: str = typer.Option("all", "--focus", "-f", help="Quality pillar focus: 'all', 'security', 'memory', 'performance', 'ux', 'dead-code', 'simplicity'"),
 ):
     """
     Run Post-Task Guard: diff audit, build checks, invariant scoring & LLM final verification.
@@ -437,7 +445,7 @@ def hook_status_cmd(
 @app.command("review")
 def review_cmd(
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
-    focus: str = typer.Option("all", "--focus", "-f", help="Quality pillar focus: 'all', 'security', 'memory', 'performance', 'ux', 'dead-code'"),
+    focus: str = typer.Option("all", "--focus", "-f", help="Quality pillar focus: 'all', 'security', 'memory', 'performance', 'ux', 'dead-code', 'simplicity'"),
 ):
     """
     Run Final Safety Review on current Git diff using the configured LLM.
@@ -460,7 +468,14 @@ def review_cmd(
     else:
         hygiene_violations = hygiene.scan_diff_level(raw_diff, summary)
     violations.extend(hygiene_violations)
-    cfg = load_config(target_repo)
+
+    simplicity = SimplicityEngine(target_repo)
+    if (focus or "").lower() in ("simplicity", "yagni", "lazy"):
+        touched = [f.path for f in summary.files]
+        simplicity_violations = simplicity.scan_focus_level(touched)
+    else:
+        simplicity_violations = simplicity.scan_diff_level(raw_diff, summary)
+    violations.extend(simplicity_violations)
     reviewer = LLMReviewerEngine(config=cfg)
     analyzer = detect_repo_domain(target_repo)
     domain_map = {

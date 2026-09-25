@@ -85,6 +85,17 @@ Tài liệu này quy định **Chỉ Thị Hoạt Động Bắt Buộc (Mandator
 
 ---
 
+### 🛋️ NGUYÊN TẮC "LƯỜI BIẾNG HIỆU QUẢ" (KISS & YAGNI — THE NECESSITY LADDER):
+*"Đoạn code ít lỗi nhất là đoạn code chưa bao giờ được viết ra."*
+
+Trước khi viết bất kỳ hàm mới hoặc thêm file mới, Agent **BẮT BUỘC** leo thang đo cần thiết:
+1. **[YAGNI]** Có thực sự cần code này không? Xóa bớt code luôn tốt hơn viết thêm code.
+2. **[Tái sử dụng]** Soi kỹ codebase hiện tại xem đã có hàm/component tương tự chưa (tránh viết lại bánh xe).
+3. **[Thư viện chuẩn & Native]** Dùng stdlib (Python) hoặc runtime native API (Browser/Node: fetch, crypto, Intl).
+4. **[Dependencies đã cài]** Tuyệt đối KHÔNG tự ý cài package npm/pip mới trừ khi có yêu cầu rõ ràng.
+5. **[KISS / 1-liner]** Ưu tiên giải pháp ngắn gọn, đơn giản. Cấm tạo interface/factory/class rườm rà cho logic nhỏ.
+
+---
 ### 📐 BẢNG MẪU BÁO CÁO BẮT BUỘC CỦA AGENT:
 
 Khi phản hồi Người Dùng, Agent phải luôn tuân thủ form mẫu minh bạch:

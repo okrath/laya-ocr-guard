@@ -115,3 +115,26 @@ def test_hygiene_violations_reporter():
 
     # Ensure terminal render handles hygiene table without errors
     render_post_task_terminal(post)
+def test_simplicity_violations_and_net_loc_reporter():
+    post = PostTaskRecord(
+        files_modified=["package.json"],
+        diff_summary=DiffSummary(
+            total_insertions=10,
+            total_deletions=45,
+            files=[FileDiffStat(path="package.json", status="modified", insertions=10, deletions=45)],
+        ),
+        rule_violations=[
+            RuleViolation(rule_id="LAZY-001", severity="HIGH", file_path="package.json", message="Added redundant package is-odd"),
+        ],
+        all_passed=False,
+        muse_verdict="REVISE",
+        muse_score=5.5,
+    )
+    md = generate_post_task_markdown(post)
+    assert "Engineering Frugality & Simplicity Alerts (KISS / YAGNI):" in md
+    assert "LAZY-001" in md
+    assert "Code Debt Reduction Bonus" in md
+    assert "-35 LOC" in md
+
+    # Ensure terminal render runs cleanly
+    render_post_task_terminal(post)

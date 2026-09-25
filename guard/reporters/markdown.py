@@ -78,10 +78,11 @@ def generate_post_task_markdown(post: PostTaskRecord, pre: Optional[PreTaskRecor
     else:
         md.append("  - ℹ️ No automated build command detected.")
 
-    # Rule Violations (OCR & Hygiene)
+    # Rule Violations (OCR, Hygiene & Simplicity)
     if post.rule_violations:
-        ocr_viols = [v for v in post.rule_violations if not v.rule_id.startswith("DEAD-")]
+        ocr_viols = [v for v in post.rule_violations if not v.rule_id.startswith("DEAD-") and not v.rule_id.startswith("LAZY-")]
         dead_viols = [v for v in post.rule_violations if v.rule_id.startswith("DEAD-")]
+        lazy_viols = [v for v in post.rule_violations if v.rule_id.startswith("LAZY-")]
 
         if ocr_viols:
             md.append("\n* **Alibaba OCR Rulebook Alerts:**")
@@ -92,7 +93,15 @@ def generate_post_task_markdown(post: PostTaskRecord, pre: Optional[PreTaskRecor
             md.append("\n* **Code & Asset Hygiene Alerts (Dead Code Gate):**")
             for v in dead_viols:
                 md.append(f"  - `[{v.severity}]` **{v.rule_id}**: {v.message} at `{v.file_path}`")
-    # Invariants Compliance
+
+        if lazy_viols:
+            md.append("\n* **Engineering Frugality & Simplicity Alerts (KISS / YAGNI):**")
+            for v in lazy_viols:
+                md.append(f"  - `[{v.severity}]` **{v.rule_id}**: {v.message} at `{v.file_path}`")
+
+    if post.diff_summary and post.diff_summary.total_deletions > post.diff_summary.total_insertions and post.diff_summary.total_deletions >= 10:
+        net = post.diff_summary.total_insertions - post.diff_summary.total_deletions
+        md.append(f"\n* **⭐ Code Debt Reduction Bonus:** Net {net:+d} LOC (Deleted more code than added).")
     if post.invariant_result:
         md.append("\n* **Invariant Verification (Laya Scoring):**")
         for c in post.invariant_result.checks:

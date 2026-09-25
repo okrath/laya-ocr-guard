@@ -115,10 +115,11 @@ def render_post_task_terminal(post: PostTaskRecord, pre: Optional[PreTaskRecord]
             inv_table.add_row(c.id, c.description, v_text, c.notes)
         console.print(inv_table)
 
-    # Rule Violations (OCR & Code Hygiene)
+    # Rule Violations (OCR, Code Hygiene & Simplicity)
     if post.rule_violations:
-        ocr_viols = [v for v in post.rule_violations if not v.rule_id.startswith("DEAD-")]
+        ocr_viols = [v for v in post.rule_violations if not v.rule_id.startswith("DEAD-") and not v.rule_id.startswith("LAZY-")]
         dead_viols = [v for v in post.rule_violations if v.rule_id.startswith("DEAD-")]
+        lazy_viols = [v for v in post.rule_violations if v.rule_id.startswith("LAZY-")]
 
         if ocr_viols:
             viol_table = Table(title="🚨 Alibaba OCR Rulebook Violations", show_header=True, header_style="bold red")
@@ -143,3 +144,25 @@ def render_post_task_terminal(post: PostTaskRecord, pre: Optional[PreTaskRecord]
                 loc = f"{v.file_path}:{v.line_number}" if v.line_number else v.file_path
                 hygiene_table.add_row(v.rule_id, v.severity, loc, v.message)
             console.print(hygiene_table)
+
+        if lazy_viols:
+            simplicity_table = Table(title="🛋️ Engineering Frugality & KISS Audit (Simplicity Gate)", show_header=True, header_style="bold magenta")
+            simplicity_table.add_column("Rule ID", style="bold magenta", width=10)
+            simplicity_table.add_column("Severity", width=10)
+            simplicity_table.add_column("Location")
+            simplicity_table.add_column("Simplicity & YAGNI Recommendation")
+
+            for v in lazy_viols:
+                loc = f"{v.file_path}:{v.line_number}" if v.line_number else v.file_path
+                simplicity_table.add_row(v.rule_id, v.severity, loc, v.message)
+            console.print(simplicity_table)
+
+    # Net Negative LOC Recognition
+    if post.diff_summary and post.diff_summary.total_deletions > post.diff_summary.total_insertions and post.diff_summary.total_deletions >= 10:
+        net = post.diff_summary.total_insertions - post.diff_summary.total_deletions
+        console.print(Panel(
+            f"[bold green]⭐ NET NEGATIVE CODE CHANGE ({net:+d} LOC)[/bold green]\n"
+            f"[dim]The best code is code you never write. Technical debt paid off successfully![/dim]",
+            title="🛋️ Engineering Frugality Bonus",
+            border_style="green",
+        ))

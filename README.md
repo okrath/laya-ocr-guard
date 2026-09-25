@@ -148,6 +148,20 @@ AI coding agents often leave behind code rot: scratchpad files, commented-out de
 ### Two-Tier Execution Strategy:
 1. **Commit-Level (Diff-Level, <50ms):** Automatically runs during `guard post` and Git hooks. Checks newly added files for orphan status and diff additions (`+`) for commented-out code.
 2. **Focus-Level (Full-File Deep Scan):** Triggered via `--focus dead-code`. Scans entire touched files and AST to detect all unreferenced helpers, unused imports, and zombie code blocks.
+---
+
+## 🛋️ Simplicity & Engineering Frugality (KISS & YAGNI)
+
+Inspired by Larry Wall's virtue of Laziness and [Dietrich Gebert's Ponytail](https://github.com/DietrichGebert/ponytail) philosophy: *"The best code is the code you never wrote."*
+
+AI coding agents tend to be hyperactive—installing heavy libraries for trivial tasks or building 4-layer abstract classes for 10 lines of logic. `guard` enforces the **Ponytail Necessity Ladder**:
+
+| Rule ID | Severity | Inspection Rule | Detection Target |
+| :--- | :--- | :--- | :--- |
+| **`LAZY-001`** | `HIGH` | **Dependency Bloat** | Redundant npm/pip packages (`is-odd`, `uuid`, `mkdirp`, `rimraf`, `pathlib2`, `mock`) when native APIs or stdlib suffice. |
+| **`LAZY-002`** | `MEDIUM` | **Premature Abstraction** | Single-use interfaces, trivial pass-through wrapper functions, and over-engineered class hierarchies. |
+| **`LAZY-003`** | `MEDIUM` | **Wheel Reinvention** | Re-implementing common utilities (`clamp`, `slugify`, `is_empty`, `flatten`, `deep_clone`) when stdlib or 1-liners suffice. |
+| **`NET-LOC`** | ⭐ **Bonus** | **Debt Reduction** | Awards a score bonus when a PR/commit deletes more code than it adds (`net negative LOC`). |
 
 ---
 
@@ -181,6 +195,9 @@ guard post
 
 # Deep focus on code hygiene & dead code:
 guard post --focus dead-code
+
+# Deep focus on KISS, YAGNI & over-engineering:
+guard post --focus simplicity
 ```
 *Output:* Inspects git diff, detects out-of-scope files, scans Alibaba OCR rules and code hygiene, executes automated build/test commands, scores invariant compliance via Laya, and requests **Final Gate Approval from your configured LLM** (`APPROVED` or `REVISE`) in `.guard/POST_TASK_REPORT.md`.
 
@@ -198,8 +215,10 @@ guard review
 
 # Focused review on code hygiene & orphan files:
 guard review --focus dead-code
-```
 
+# Focused review acting as "The Laziest Senior Architect in the Room":
+guard review --focus simplicity
+```
 ### 6. Supply-Chain Security & Safe Updates (`guard update`)
 Guard enforces a **3-day Quarantine Cooling Period** on Alibaba OCR npm releases to defend against zero-day backdoors:
 ```bash
@@ -220,7 +239,7 @@ guard update self
 
 ## 🧪 Running the Test Suite
 
-The project includes an end-to-end integration and unit test suite (55+ tests):
+The project includes an end-to-end integration and unit test suite (64+ tests):
 
 ```bash
 pytest

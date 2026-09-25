@@ -152,3 +152,41 @@ def test_reviewer_reject_on_dead_code_focus(reviewer):
     assert focus_verdict.verdict == ReviewVerdict.REVISE
     assert focus_verdict.focus_area == "dead-code"
     assert any("DEAD-001" in step for step in focus_verdict.remediation_steps)
+def test_reviewer_simplicity_focus_and_net_loc(reviewer):
+    # 1. Net negative LOC awards bonus
+    diff_reduced = DiffSummary(
+        total_insertions=5,
+        total_deletions=50,
+        files=[FileDiffStat(path="src/legacy.py", status="modified", insertions=5, deletions=50)],
+        raw_diff="diff --git a/src/legacy.py ...",
+    )
+    verdict_clean = reviewer.review(
+        prompt="Delete deprecated code",
+        domain=DomainType.BACKEND,
+        diff_summary=diff_reduced,
+        use_llm=False,
+        focus="all",
+    )
+    assert verdict_clean.verdict == ReviewVerdict.APPROVED
+    assert any("Code Debt Reduction" in note for note in verdict_clean.technical_audit)
+
+    # 2. In simplicity focus mode, LAZY-001 is a hard blocker
+    violations = [
+        RuleViolation(
+            rule_id="LAZY-001",
+            severity="HIGH",
+            file_path="package.json",
+            message="Added redundant dependency is-odd",
+        )
+    ]
+    focus_verdict = reviewer.review(
+        prompt="Add helper",
+        domain=DomainType.BACKEND,
+        diff_summary=diff_reduced,
+        violations=violations,
+        use_llm=False,
+        focus="simplicity",
+    )
+    assert focus_verdict.verdict == ReviewVerdict.REVISE
+    assert focus_verdict.focus_area == "simplicity"
+    assert any("LAZY-001" in step for step in focus_verdict.remediation_steps)
