@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 from guard.core.session import DomainContract, LockedInvariant
 from guard.domains.base import BaseDomainAnalyzer

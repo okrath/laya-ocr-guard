@@ -2,7 +2,6 @@
 Unit tests for Hook Installer and Templates.
 """
 
-from pathlib import Path
 import pytest
 
 from guard.hooks.installer import HookInstaller

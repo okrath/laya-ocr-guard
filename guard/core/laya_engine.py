@@ -17,9 +17,9 @@ from __future__ import annotations
 import re
 import time
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class DomainType(str, Enum):

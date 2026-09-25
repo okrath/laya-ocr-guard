@@ -3,7 +3,6 @@ Unit tests for Supply-Chain Security & Update Quarantine Checker (Alibaba OCR).
 """
 
 from unittest.mock import MagicMock, patch
-import pytest
 
 from guard.core.updater import (
     UpdateSecurityStatus,
@@ -12,7 +11,6 @@ from guard.core.updater import (
     is_version_newer,
     parse_version_tuple,
     perform_ocr_upgrade,
-    perform_self_upgrade,
 )
 
 

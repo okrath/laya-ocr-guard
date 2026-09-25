@@ -1,5 +1,5 @@
 """
-Unit tests for Muse / LLM Reviewer Engine.
+Unit tests for LLM Reviewer Engine (Final Safety Gate).
 """
 
 import pytest

@@ -2,7 +2,6 @@
 Unit tests for Session Manager.
 """
 
-from pathlib import Path
 import pytest
 
 from guard.core.laya_engine import DomainType, LayaTriageResult, RiskLevel, TaskIntent

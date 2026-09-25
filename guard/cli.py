@@ -13,7 +13,6 @@ Provides:
 
 from __future__ import annotations
 
-import os
 import re
 import shutil
 import subprocess
@@ -31,15 +30,8 @@ from guard import __app_name__, __version__
 from guard.core.config import get_global_config_path, get_local_config_path, load_config, print_config_table
 from guard.core.laya_engine import DomainType, LayaEngine
 from guard.core.llm_reviewer import LLMReviewerEngine, ReviewVerdict
-from guard.core.ocr_engine import GitDiffInspector, OCRRulebookRunner, run_ocr_audit
-from guard.core.session import (
-    BuildCheckResult,
-    DomainContract,
-    LockedInvariant,
-    PostTaskRecord,
-    SessionManager,
-    SessionStatus,
-)
+from guard.core.ocr_engine import GitDiffInspector, OCRRulebookRunner
+from guard.core.session import BuildCheckResult, PostTaskRecord, SessionManager
 from guard.core.updater import UpdateSecurityStatus, check_ocr_update, perform_ocr_upgrade, perform_self_upgrade
 from guard.domains.detector import (
     detect_build_command,
@@ -478,15 +470,6 @@ def review_cmd(
         title="🤖 LLM Code Review & Approval",
         border_style=badge_color,
     ))
-
-
-@app.command("muse", hidden=True)
-def muse_alias_cmd(
-    repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
-    focus: str = typer.Option("all", "--focus", "-f", help="Quality pillar focus: 'all', 'security', 'memory', 'performance', 'ux'"),
-):
-    """Alias for `guard review`."""
-    review_cmd(repo=repo, focus=focus)
 
 
 @app.command("update")

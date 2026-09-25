@@ -19,7 +19,7 @@ from enum import Enum
 from typing import Optional, Tuple
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class UpdateSecurityStatus(str, Enum):

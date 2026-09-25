@@ -9,8 +9,6 @@ Safely backs up any existing user files before modification.
 
 from __future__ import annotations
 
-import os
-import shutil
 import stat
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple

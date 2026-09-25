@@ -2,10 +2,6 @@
 Unit tests for Core Config and LLM Client.
 """
 
-from pathlib import Path
-import tempfile
-import pytest
-
 from guard.core.config import (
     GuardConfig,
     LLMConfig,
@@ -14,8 +10,6 @@ from guard.core.config import (
     save_config,
     sync_to_alibaba_ocr,
 )
-from guard.core.llm_client import ping_llm, call_llm
-
 
 def test_llm_config_masking():
     cfg = LLMConfig(api_key="sk-1234567890abcdef")

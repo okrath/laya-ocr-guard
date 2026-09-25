@@ -2,16 +2,12 @@
 Unit tests for Domain Analyzers and Automatic Detector.
 """
 
-from pathlib import Path
-import pytest
-
 from guard.core.laya_engine import DomainType
 from guard.domains.backend import BackendDomainAnalyzer
 from guard.domains.detector import (
     detect_build_command,
     detect_repo_domain,
     extract_contracts_and_invariants,
-    get_analyzer_by_domain,
 )
 from guard.domains.frontend import FrontendDomainAnalyzer
 from guard.domains.infra import InfraDomainAnalyzer

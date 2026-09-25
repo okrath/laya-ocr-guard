@@ -3,14 +3,11 @@ Unit tests for OCR Engine and Git Diff Inspector across Quality Pillars.
 """
 
 from pathlib import Path
-import pytest
 
 from guard.core.ocr_engine import (
     GitDiffInspector,
     OCRRulebookRunner,
-    run_ocr_audit,
 )
-
 
 SAMPLE_DIFF = """diff --git a/src/Checkout.tsx b/src/Checkout.tsx
 new file mode 100644
