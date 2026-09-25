@@ -331,3 +331,16 @@ def test_large_diff_is_reviewed_in_parts_not_truncated():
     assert "Diff part 2/3" in prompts[1]
     assert verdict.verdict.value == "REVISE" and verdict.score == 5.0
     assert verdict.review_mode == "llm_deep"
+
+
+def test_new_invariants_file_is_self_checked_on_post(tmp_path):
+    repo = make_repo(tmp_path)
+    assert execute_pre_task("Add guard.invariants.json", repo_path=repo) is True
+    (repo / "guard.invariants.json").write_text(json.dumps({"invariants": [
+        {"id": "OK", "description": "send exported", "checks": [{"files": "src/chat.ts", "require": "export function send"}]},
+        {"id": "BROKEN", "description": "typo", "checks": [{"files": "src/chat.ts", "require": "export function sned"}]},
+    ]}), encoding="utf-8")
+    assert execute_post_task(repo_path=repo) is False
+    checks = {c.id: c.status for c in SessionManager(repo).load_local_session().post.invariant_result.checks}
+    assert checks["OK (new guard.invariants.json, self-check)"] == "passed"
+    assert checks["BROKEN (new guard.invariants.json, self-check)"] == "failed"

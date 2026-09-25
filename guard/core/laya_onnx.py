@@ -17,6 +17,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import httpx
 import numpy as np
 
+from guard import __version__
+
 # Special token IDs for ModernBERT / Laya
 CLS_ID = 50281
 SEP_ID = 50282
@@ -109,7 +111,7 @@ def download_laya_model(
     dest_path = get_model_path(key)
     tmp_path = dest_path.with_suffix(".tmp")
 
-    headers = {"User-Agent": "laya-ocr-guard/0.5.0"}
+    headers = {"User-Agent": f"laya-ocr-guard/{__version__}"}
     with httpx.stream("GET", url, headers=headers, follow_redirects=True, timeout=120.0) as resp:
         if resp.status_code != 200:
             raise RuntimeError(f"Failed to download Laya ONNX model from {url}: HTTP {resp.status_code}")

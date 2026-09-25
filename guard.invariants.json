@@ -1,0 +1,92 @@
+{
+  "invariants": [
+    {
+      "id": "GATE-01",
+      "description": "The report never presents a heuristic verdict as an LLM review, and a failed LLM call is recorded with its reason.",
+      "rationale": "A timed-out LLM call used to be reported as 'LLM GATE APPROVAL 10/10'.",
+      "checks": [
+        { "files": "guard/**/*.py", "forbid": "LLM GATE APPROVAL" },
+        { "files": "guard/core/llm_reviewer.py", "require": "review_mode=\"heuristic\"" },
+        { "files": "guard/core/llm_reviewer.py", "require": "llm_error = f\"\\{type\\(e\\)\\.__name__\\}" },
+        { "files": "guard/reporters/markdown.py", "require": "def gate_label\\(" }
+      ]
+    },
+    {
+      "id": "GATE-02",
+      "description": "Scoring and the LLM prompt stay honest: no bonus for deleting code, no claim that a test suite ran, no instruction to approve deletions.",
+      "rationale": "A -1982 line diff earned +0.5 and the LLM was told 'tests passed, approve with confidence'.",
+      "checks": [
+        { "files": "guard/core/llm_reviewer.py", "forbid": "score \\+ 0\\.5" },
+        { "files": "guard/core/llm_reviewer.py", "forbid": "test suite has already" },
+        { "files": "guard/core/llm_reviewer.py", "forbid": "approve with confidence" }
+      ]
+    },
+    {
+      "id": "GATE-03",
+      "description": "Large diffs are reviewed in parts, never silently truncated.",
+      "rationale": "Only the first 80k characters used to reach the LLM.",
+      "checks": [
+        { "files": "guard/core/llm_reviewer.py", "require": "def _prepare_diff_batches\\(" },
+        { "files": "guard/core/llm_reviewer.py", "require": "def _merge_verdicts\\(" }
+      ]
+    },
+    {
+      "id": "SCOPE-01",
+      "description": "Scope is only what the prompt or --scope declares: dirty files are never added to it, and a restart inherits baseline and scope instead of redefining them.",
+      "rationale": "pre merged every dirty file into scope, and could be re-run after editing to widen it.",
+      "checks": [
+        { "files": "guard/cli.py", "forbid": "working_files \\+ prompt_files" },
+        { "files": "guard/cli.py", "require": "baseline_dirty = dict\\(old\\.baseline_dirty\\)" },
+        { "files": "guard/cli.py", "require": "SCOPE-004" }
+      ]
+    },
+    {
+      "id": "SCOPE-02",
+      "description": "Post audits against the base commit recorded at pre, with raw porcelain -z paths.",
+      "rationale": "Mid-task commits, renames and paths with spaces or Vietnamese characters used to escape the audit.",
+      "checks": [
+        { "files": "guard/cli.py", "require": "get_diff\\(base_ref=pre\\.base_ref" },
+        { "files": "guard/core/ocr_engine.py", "require": "\"--porcelain\", \"-z\"" }
+      ]
+    },
+    {
+      "id": "INV-01",
+      "description": "An invariant without an applicable check is UNVERIFIED, never counted as passed, and no fixed confidence is invented.",
+      "rationale": "Irrelevant template invariants used to be marked 'Maintained' with a hardcoded 0.92 confidence.",
+      "checks": [
+        { "files": "guard/core/laya_engine.py", "require": "STATUS_UNVERIFIED, \"No automated check applies" },
+        { "files": "guard/core/project_invariants.py", "require": "return STATUS_UNVERIFIED" },
+        { "files": "guard/core/laya_engine.py", "forbid": "confidence=0\\.92" }
+      ]
+    },
+    {
+      "id": "SEC-01",
+      "description": "SEC-003 cannot be silenced by a comment that mentions 'sanitize'.",
+      "rationale": "Any innerHTML line containing the word 'sanitize' used to be skipped.",
+      "checks": [
+        { "files": "guard/core/ocr_engine.py", "forbid": "\"sanitize\" not in added_code" },
+        { "files": "guard/core/ocr_engine.py", "require": "def _unsafe_html_sinks\\(" }
+      ]
+    },
+    {
+      "id": "HOOK-01",
+      "description": "Git hooks never break unrelated commits: UTF-8 console, LF scripts, repo-local hooks chained via --git-common-dir.",
+      "rationale": "A cp1252 crash in the global hook blocked every commit on the machine.",
+      "checks": [
+        { "files": "guard/cli.py", "require": "^    _force_utf8_console\\(\\)" },
+        { "files": "guard/hooks/installer.py", "forbid": "write_text\\((GIT_PRE_COMMIT_HOOK|GIT_PREPARE_COMMIT_MSG_HOOK|script_content), encoding=\"utf-8\"\\)" },
+        { "files": "guard/hooks/templates.py", "require": "rev-parse --git-common-dir" },
+        { "files": "guard/hooks/templates.py", "forbid": "rev-parse --git-dir" }
+      ]
+    },
+    {
+      "id": "HOOK-02",
+      "description": "An approved session covers only the exact file contents it approved.",
+      "rationale": "One old approval let an unrelated 19-file commit through unchecked.",
+      "checks": [
+        { "files": "guard/cli.py", "require": "approved_fingerprints=" },
+        { "files": "guard/cli.py", "forbid": "last guard session was approved, skipping" }
+      ]
+    }
+  ]
+}

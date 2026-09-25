@@ -34,7 +34,7 @@ from guard.core.laya_engine import DomainType, LayaEngine
 from guard.core.hygiene_engine import HygieneEngine
 from guard.core.llm_reviewer import LLMReviewerEngine, ReviewVerdict
 from guard.core.ocr_engine import GitDiffInspector, OCRRulebookRunner, RuleViolation
-from guard.core.project_invariants import InvariantsFileError
+from guard.core.project_invariants import INVARIANTS_FILENAME, InvariantsFileError, load_project_invariants
 from guard.core.simplicity_engine import SimplicityEngine
 from guard.core.session import BuildCheckResult, PostTaskRecord, SessionManager, SessionStatus
 from guard.core.updater import (
@@ -406,6 +406,25 @@ def execute_post_task(
             c.status = "baseline_failed"
             c.passed = True
             c.notes += " (already failing before this task)"
+
+    # A new or edited guard.invariants.json is not locked by this session, so self-check it on the
+    # current tree: a rule that fails on the code it was written for is a broken rule.
+    if any(f.path == INVARIANTS_FILENAME for f in diff_summary.files):
+        try:
+            new_items = load_project_invariants(target_repo) or []
+        except InvariantsFileError as e:
+            violations.append(RuleViolation(rule_id="INV-FILE", severity="CRITICAL", file_path=INVARIANTS_FILENAME, message=str(e)))
+        else:
+            self_check = laya.evaluate_invariants(
+                invariants=[{"id": i["id"], "description": i["description"], "checks": i.get("checks") or []} for i in new_items],
+                git_diff="",
+                files_changed=[],
+                repo_path=target_repo,
+            )
+            for c in self_check.checks:
+                c.id = f"{c.id} (new {INVARIANTS_FILENAME}, self-check)"
+                inv_eval.checks.append(c)
+            inv_eval.unverified_count += self_check.unverified_count
     inv_eval.all_passed = not any(c.status == "failed" for c in inv_eval.checks)
 
     # 5. LLM Final Gatekeeper Review (Calling the user-configured LLM)
