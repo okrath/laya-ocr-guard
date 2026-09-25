@@ -371,3 +371,10 @@ def test_removed_symbols_still_referenced_are_reported(tmp_path):
     post = SessionManager(repo).load_local_session().post
     dead_refs = [v.message for v in post.rule_violations if v.rule_id == "DEAD-REF"]
     assert len(dead_refs) == 1 and "`edit`" in dead_refs[0] and "src/use.ts:1" in dead_refs[0]
+
+
+def test_build_info_names_the_script_that_ran():
+    from guard.core.llm_reviewer import _resolved_script
+    assert _resolved_script("vite v6\n$ tsc && vite build\n") == "tsc && vite build"
+    assert _resolved_script("\n> fe@0.1.0 build\n> tsc -b && vite build\n") == "tsc -b && vite build"
+    assert _resolved_script("no script echo here") is None

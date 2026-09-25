@@ -30,6 +30,15 @@ REVIEW_BATCH_CHARS = 80000
 REVIEW_MAX_BATCHES = 6
 
 
+def _resolved_script(output: str) -> Optional[str]:
+    """Script line echoed by pnpm/yarn (`$ tsc && vite build`) or npm (`> tsc && vite build`)."""
+    for line in (output or "").splitlines():
+        m = re.match(r"^\s*[$>]\s+(?!\S+@\S+\s)(\S.*)$", line)
+        if m:
+            return m.group(1).strip()
+    return None
+
+
 class ReviewVerdict(str, Enum):
     APPROVED = "APPROVED"
     REVISE = "REVISE"
@@ -289,6 +298,10 @@ class LLMReviewerEngine:
 
         files_summary = ", ".join(f"{f.path} ({f.status})" for f in (diff_summary.files if diff_summary else []))
         build_info = f"PASSED ({build_check.command} exit 0)" if (build_check and build_check.passed) else ("FAILED" if build_check else "NOT RUN")
+        script = _resolved_script(build_check.output) if build_check else None
+        if script:
+            # `pnpm run build` alone does not tell the reviewer whether a typecheck ran
+            build_info += f"; the script actually executed was: `{script}`"
         violations_info = "\n".join(f"- [{v.severity}] {v.rule_id} {v.file_path}: {v.message}" for v in violations[:30])
         invariants_info = "\n".join(
             f"- [{c.status.upper()}] {c.id}: {c.description} ({c.notes})" for c in (invariant_result.checks if invariant_result else [])
