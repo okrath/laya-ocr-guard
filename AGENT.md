@@ -2,7 +2,7 @@
 
 This document establishes **Mandatory Operational Directives** for any AI Coding Agent (`omp`, Claude Code, Cursor, Windsurf, Aider) working in this repository.
 
-To prevent regressions and protect existing working features, **AI AGENTS MUST EXECUTE BOTH HOOK PHASES VIA THE BASH TOOL**:
+To strictly prevent regressions, feature breakage, and unintended code loss, **AI AGENTS MUST EXECUTE BOTH HOOK PHASES VIA THE BASH TOOL**:
 
 ```text
 [Incoming Task / Bugfix Request]
@@ -25,6 +25,18 @@ To prevent regressions and protect existing working features, **AI AGENTS MUST E
 │ • Present format: ### 🧪 POST-TASK VERIFICATION       │
 └────────────────────────────────────────────────────────┘
 ```
+
+---
+
+### 🛋️ THE EFFICIENT LAZINESS PRINCIPLE (KISS & YAGNI — THE NECESSITY LADDER):
+*"The least buggy code is the code that is never written."*
+
+Before writing any new function or creating a new file, the Agent **MUST** climb the necessity ladder:
+1. **[YAGNI]** Is this code truly necessary? Deleting or avoiding code is always better than adding code.
+2. **[Reuse]** Inspect the existing codebase thoroughly to reuse existing functions/components (avoid reinventing the wheel).
+3. **[Standard Library & Native APIs]** Prefer stdlib (Python) or runtime native APIs (Browser/Node: fetch, crypto, Intl).
+4. **[Installed Dependencies]** NEVER arbitrarily install new npm/pip packages unless explicitly requested.
+5. **[KISS / 1-liner]** Favor concise, straightforward solutions. Do NOT introduce bloated interfaces, factories, or classes for trivial logic.
 
 ---
 

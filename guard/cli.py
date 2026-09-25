@@ -396,33 +396,83 @@ app.add_typer(hook_app, name="hook")
 @hook_app.command("install")
 def hook_install_cmd(
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
-    mode: str = typer.Option("all", "--mode", "-m", help="Mode: git, agent, or all"),
+    mode: Optional[str] = typer.Option(None, "--mode", "-m", help="Mode: 'git' (stealth), 'agent', or 'all'"),
+    stealth: bool = typer.Option(False, "--stealth", "-s", help="Shortcut for --mode git (Zero workspace footprint, Git hooks only)"),
 ):
     """
-    Install Guard hooks and AI agent directives into target repository.
+    Install Guard hooks and/or AI agent directives into target repository.
     """
     installer = HookInstaller(Path(repo) if repo else None)
-    success, messages = installer.install(mode=mode)
+
+    if stealth:
+        selected_mode = "git"
+    elif mode:
+        m = mode.lower().strip()
+        if m in ("git", "stealth", "1"):
+            selected_mode = "git"
+        elif m in ("agent", "2"):
+            selected_mode = "agent"
+        elif m in ("all", "dual", "3"):
+            selected_mode = "all"
+        else:
+            console.print(f"[bold red]❌ Invalid mode '{mode}'. Choose 'git' (or --stealth), 'agent', or 'all'.[/bold red]")
+            raise typer.Exit(code=1)
+    else:
+        # Interactive selection if terminal is interactive
+        if sys.stdin and sys.stdin.isatty():
+            console.print("\n[bold cyan]🛡️  Laya-OCR-Guard Installation Setup[/bold cyan]")
+            console.print("Choose how you want Guard to protect this workspace:\n")
+            console.print("  [bold green][1] 👻 Stealth Mode (Git Hooks Only - Recommended for company/shared repos)[/bold green]")
+            console.print("      • Installs local .git/hooks/pre-commit gate")
+            console.print("      • [bold]ZERO files added to workspace root[/bold] (Never pushed to remote repo)")
+            console.print("  [bold yellow][2] 🤖 Agent Directives Only (CLAUDE.md & AGENT.md)[/bold yellow]")
+            console.print("      • Injects AI guidelines directly into workspace root")
+            console.print("      • No Git hooks installed")
+            console.print("  [bold magenta][3] 🛡️  Dual-Gate Full Protection (Git Hooks + Agent Directives)[/bold magenta]")
+            console.print("      • Maximum protection: both pre-commit gate and AI agent instructions\n")
+
+            choice_map = {
+                "1": "git", "git": "git", "stealth": "git",
+                "2": "agent", "agent": "agent",
+                "3": "all", "all": "all", "dual": "all",
+            }
+            while True:
+                choice = typer.prompt("Select installation mode [1-3]", default="1")
+                choice_clean = choice.strip().lower()
+                if choice_clean in choice_map:
+                    selected_mode = choice_map[choice_clean]
+                    break
+                console.print("[yellow]Invalid choice. Please enter 1, 2, or 3.[/yellow]")
+        else:
+            selected_mode = "all"  # Default to full protection for backward-compatible CI/scripts
+            console.print("[dim]• Non-interactive environment: defaulting to mode 'all' (use --stealth for git-only)[/dim]")
+    success, messages = installer.install(mode=selected_mode)
     for m in messages:
         console.print(f"[green]• {m}[/green]")
     if success:
-        console.print("[bold green]✅ Guard hooks and AI Agent directives successfully installed![/bold green]")
+        mode_desc = {
+            "git": "Ghost/Stealth Mode (Git hooks only, zero workspace footprint)",
+            "agent": "Agent Directives Mode (CLAUDE.md & AGENT.md)",
+            "all": "Dual-Gate Full Protection Mode (Git hooks + Agent directives)",
+        }.get(selected_mode, selected_mode)
+        console.print(f"[bold green]✅ Guard installed successfully! ({mode_desc})[/bold green]")
     else:
-        console.print("[bold red]❌ Failed to install some hooks.[/bold red]")
+        console.print("[bold red]❌ Failed to install Guard hooks.[/bold red]")
 
 
 @hook_app.command("uninstall")
 def hook_uninstall_cmd(
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
+    mode: str = typer.Option("all", "--mode", "-m", help="Mode to uninstall: 'git', 'agent', or 'all'"),
 ):
     """
     Safely uninstall Guard hooks and restore previous user files.
     """
     installer = HookInstaller(Path(repo) if repo else None)
-    success, messages = installer.uninstall()
+    success, messages = installer.uninstall(mode=mode)
     for m in messages:
         console.print(f"[yellow]• {m}[/yellow]")
-    console.print("[bold green]✅ Guard hooks removed.[/bold green]")
+    console.print("[bold green]✅ Guard hooks uninstalled.[/bold green]")
 
 
 @hook_app.command("status")
@@ -435,6 +485,15 @@ def hook_status_cmd(
     installer = HookInstaller(Path(repo) if repo else None)
     status = installer.get_status()
 
+    mode_labels = {
+        "all": "[bold magenta]🛡️ Dual-Gate Full Protection (Git Hooks + Agent Directives)[/bold magenta]",
+        "git": "[bold green]👻 Stealth Mode (Git Hooks Only - Zero Workspace Footprint)[/bold green]",
+        "agent": "[bold yellow]🤖 Agent Directives Only (CLAUDE.md & AGENT.md)[/bold yellow]",
+        "none": "[dim]⚪ Inactive (No Guard hooks or directives active)[/dim]",
+    }
+    mode_label = mode_labels.get(status.get("mode", "none"), "[dim]⚪ Inactive[/dim]")
+    console.print(f"\n[bold]Active Profile:[/bold] {mode_label}\n")
+
     table = Table(title=f"🪝 Guard Hook & Agent Status ({installer.repo_path.name})", show_header=True)
     table.add_column("Component / Directive", style="bold")
     table.add_column("Status", justify="center")
@@ -443,6 +502,7 @@ def hook_status_cmd(
     table.add_row("Git Repository", "✅ Yes" if status["is_git_repo"] else "❌ No", "Git VCS")
     table.add_row("Git pre-commit", "✅ Active" if status["pre_commit_installed"] else "⚪ Inactive", ".git/hooks/pre-commit")
     table.add_row("Git prepare-commit-msg", "✅ Active" if status["prepare_commit_msg_installed"] else "⚪ Inactive", ".git/hooks/prepare-commit-msg")
+    table.add_row("Local Git Exclude", "✅ Active" if status.get("git_exclude_active") else "⚪ Inactive", ".git/info/exclude (.guard/ hidden)")
     table.add_row("CLAUDE.md Directive", "✅ Active" if status["claude_md_active"] else "⚪ Inactive", "Directives for omp & Claude Code")
     table.add_row("AGENT.md Directive", "✅ Active" if status["agent_md_active"] else "⚪ Inactive", "Directives for Cursor, Windsurf, Aider")
     table.add_row("Agent Wrapper (.guard/bin)", "✅ Active" if status["agent_wrapper_installed"] else "⚪ Inactive", ".guard/bin/guard-exec")

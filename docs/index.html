@@ -195,7 +195,7 @@
         <a href="https://github.com/okrath/laya-ocr-guard" target="_blank" rel="noopener noreferrer">
           <span class="badge badge-blue">📦 okrath/laya-ocr-guard</span>
         </a>
-        <span class="badge badge-green">v0.3.0</span>
+        <span class="badge badge-green">v0.4.0</span>
         <span class="badge badge-yellow">Apache-2.0</span>
         <a href="https://github.com/okrath" target="_blank" rel="noopener noreferrer">
           <span class="badge" style="background: rgba(139, 148, 158, 0.15); color: #8b949e; border: 1px solid rgba(139, 148, 158, 0.3);">👤 Author: @okrath</span>
@@ -379,11 +379,11 @@ guard doctor</code></pre>
         To protect any target repository, navigate to the repo root and execute:
       </p>
       <pre><code>guard hook install</code></pre>
-      <p>This automatically provisions three defense layers:</p>
+      <p>This provides flexible protection profiles tailored for any workflow:</p>
       <ol>
-        <li><strong>Agent Directives (<code>CLAUDE.md</code> &amp; <code>AGENT.md</code>):</strong> Injects mandatory protocol directives so agents automatically run <code>guard pre</code> before editing, and <code>guard post</code> after completing edits.</li>
-        <li><strong>Git Hook Enforcement:</strong> Installs a <code>pre-commit</code> hook that automatically runs <code>guard post</code> and aborts commits if tests fail or invariants are violated.</li>
-        <li><strong>Harness Wrapper:</strong> Generates <code>.guard/bin/guard-exec</code> for external CI/CD integrations.</li>
+        <li><strong>Ghost / Stealth Mode (<code>--stealth</code> / <code>--mode git</code>):</strong> Installs local <code>.git/hooks/pre-commit</code> and configures <code>.git/info/exclude</code>. Zero workspace footprint (no files ever pushed to remote; ideal for company or client repos).</li>
+        <li><strong>Agent Directives (<code>--mode agent</code>):</strong> Generates <code>CLAUDE.md</code> and <code>AGENT.md</code> in workspace root and <code>.guard/bin/guard-exec</code> harness wrapper so agents automatically run <code>guard pre</code> before editing and <code>guard post</code> after completing edits.</li>
+        <li><strong>Dual-Gate Full Protection (<code>--mode all</code>):</strong> Combines Git pre-commit hook enforcement, workspace agent directives, and harness wrapper script.</li>
       </ol>
       <p>Check hook and agent directive status at any time:</p>
       <pre><code>guard hook status</code></pre>
@@ -432,8 +432,8 @@ guard doctor</code></pre>
           </tr>
           <tr>
             <td><code>guard hook install</code></td>
-            <td>Install Git hooks and CLAUDE.md/AGENT.md directives</td>
-            <td><code>--mode &lt;git|agent|all&gt;</code></td>
+            <td>Install Git hooks and/or CLAUDE.md/AGENT.md directives</td>
+            <td><code>--stealth</code>, <code>--mode &lt;git|agent|all&gt;</code></td>
           </tr>
           <tr>
             <td><code>guard update</code></td>
@@ -470,7 +470,7 @@ guard update --force</code></pre>
 
     <footer style="margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
       <div>
-        <strong>Laya-OCR-Guard</strong> v0.3.0 is an open-source project by <a href="https://github.com/okrath" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">@okrath</a> under the Apache-2.0 License.
+        <strong>Laya-OCR-Guard</strong> v0.4.0 is an open-source project by <a href="https://github.com/okrath" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">@okrath</a> under the Apache-2.0 License.
       </div>
       <div>
         <a href="https://github.com/okrath/laya-ocr-guard" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">GitHub Repository</a> &bull;

@@ -55,64 +55,65 @@ exit $POST_STATUS
 """
 
 # Agent Instruction Directive Template for CLAUDE.md & AGENT.md (Auto-consumed by omp, Claude Code, Cursor, Windsurf)
-AGENT_DIRECTIVES_TEMPLATE = """# 🛡️ GIAO THỨC BẮT BUỘC: LAYA-OCR-GUARD DUAL-GATE HOOK
+AGENT_DIRECTIVES_TEMPLATE = """# 🛡️ MANDATORY PROTOCOL: LAYA-OCR-GUARD DUAL-GATE HOOK
 
-Tài liệu này quy định **Chỉ Thị Hoạt Động Bắt Buộc (Mandatory Agent Directives)** cho mọi AI Agent (`omp`, Claude Code, Cursor, Windsurf, Aider) khi làm việc trong kho mã nguồn này.
+This document establishes **Mandatory Operational Directives** for any AI Coding Agent (`omp`, Claude Code, Cursor, Windsurf, Aider) working in this repository.
 
-Để tránh tuyệt đối việc sửa tính năng này làm hỏng hoặc mất các tính năng cũ, **AI AGENT BẮT BUỘC PHẢI THỰC HIỆN ĐỦ 2 NHỊP HOOK BẰNG BASH TOOL**:
+To strictly prevent regressions, feature breakage, and unintended code loss, **AI AGENTS MUST EXECUTE BOTH HOOK PHASES VIA THE BASH TOOL**:
 
 ```text
-[Yêu Cầu Mới / Bugfix từ Người Dùng]
+[Incoming Task / Bugfix Request]
              │
              ▼
 ┌────────────────────────────────────────────────────────┐
-│ 1. NHỊP PRE-TASK (BẮT BUỘC TRƯỚC KHI SỬA BẤT KỲ CODE): │
-│ • Agent chạy lệnh: `guard pre "<yêu cầu>"`             │
-│ • Đọc file: `.guard/PRE_TASK_NOTE.md` để nắm Invariants│
-│ • Trình bày form: ### 🔍 PRE-TASK IMPACT NOTE          │
+│ 1. PRE-TASK HOOK (MANDATORY BEFORE TOUCHING ANY CODE): │
+│ • Run: `guard pre "<user_request>"`                    │
+│ • Read: `.guard/PRE_TASK_NOTE.md` to learn Invariants  │
+│ • Present format: ### 🔍 PRE-TASK IMPACT NOTE          │
 └────────────────────────────────────────────────────────┘
              │
-             ▼ (Agent tiến hành sửa code đúng phạm vi cho phép)
+             ▼ (Agent performs minimal, scoped, precise code edits)
              │
 ┌────────────────────────────────────────────────────────┐
-│ 2. NHỊP POST-TASK (BẮT BUỘC SAU KHI SỬA CODE XONG):    │
-│ • Agent chạy lệnh: `guard post`                        │
-│ • Kiểm tra kết quả build test & phán quyết LLM Gate    │
-│ • Nếu REVISE: Tự động sửa lại theo danh sách lỗi       │
-│ • Trình bày form: ### 🧪 POST-TASK VERIFICATION       │
+│ 2. POST-TASK HOOK (MANDATORY AFTER FINISHING EDITS):   │
+│ • Run: `guard post`                                    │
+│ • Verify build check, OCR diff rules & LLM Gate verdict│
+│ • If REVISE: Self-heal and fix listed violations       │
+│ • Present format: ### 🧪 POST-TASK VERIFICATION       │
 └────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### 🛋️ NGUYÊN TẮC "LƯỜI BIẾNG HIỆU QUẢ" (KISS & YAGNI — THE NECESSITY LADDER):
-*"Đoạn code ít lỗi nhất là đoạn code chưa bao giờ được viết ra."*
+### 🛋️ THE EFFICIENT LAZINESS PRINCIPLE (KISS & YAGNI — THE NECESSITY LADDER):
+*"The least buggy code is the code that is never written."*
 
-Trước khi viết bất kỳ hàm mới hoặc thêm file mới, Agent **BẮT BUỘC** leo thang đo cần thiết:
-1. **[YAGNI]** Có thực sự cần code này không? Xóa bớt code luôn tốt hơn viết thêm code.
-2. **[Tái sử dụng]** Soi kỹ codebase hiện tại xem đã có hàm/component tương tự chưa (tránh viết lại bánh xe).
-3. **[Thư viện chuẩn & Native]** Dùng stdlib (Python) hoặc runtime native API (Browser/Node: fetch, crypto, Intl).
-4. **[Dependencies đã cài]** Tuyệt đối KHÔNG tự ý cài package npm/pip mới trừ khi có yêu cầu rõ ràng.
-5. **[KISS / 1-liner]** Ưu tiên giải pháp ngắn gọn, đơn giản. Cấm tạo interface/factory/class rườm rà cho logic nhỏ.
+Before writing any new function or creating a new file, the Agent **MUST** climb the necessity ladder:
+1. **[YAGNI]** Is this code truly necessary? Deleting or avoiding code is always better than adding code.
+2. **[Reuse]** Inspect the existing codebase thoroughly to reuse existing functions/components (avoid reinventing the wheel).
+3. **[Standard Library & Native APIs]** Prefer stdlib (Python) or runtime native APIs (Browser/Node: fetch, crypto, Intl).
+4. **[Installed Dependencies]** NEVER arbitrarily install new npm/pip packages unless explicitly requested.
+5. **[KISS / 1-liner]** Favor concise, straightforward solutions. Do NOT introduce bloated interfaces, factories, or classes for trivial logic.
 
 ---
-### 📐 BẢNG MẪU BÁO CÁO BẮT BUỘC CỦA AGENT:
 
-Khi phản hồi Người Dùng, Agent phải luôn tuân thủ form mẫu minh bạch:
+### 📐 MANDATORY AGENT REPORTING FORMAT:
+
+When replying to the user, the Agent must strictly structure the response:
 
 ```markdown
 ### 🔍 PRE-TASK IMPACT NOTE:
-* **Hiện trạng chức năng:** [Mô tả tính năng hiện tại đã có gì]
-* **Dự kiến phạm vi tác động:** [Danh sách file sẽ thay đổi]
-* **Locked Invariants:** [Các bất biến kỹ thuật không được làm gãy]
+* **Current Baseline:** [Brief summary of existing functionality and contracts]
+* **Expected Impact Range:** [List of files and components to be modified]
+* **Locked Invariants:** [Technical constraints that must NOT be broken]
 
 ---
-(Nội dung thực hiện sửa đổi mã nguồn tối giản, chuẩn xác)
+(Implementation content: clean, minimal, scoped code modifications)
 ---
 
 ### 🧪 POST-TASK VERIFICATION:
-* **Phạm vi tác động thực tế:** [Những gì đã thay đổi cụ thể]
-* **Build Check:** [Kết quả build/test tự động từ guard post]
-* **LLM Gate Verdict:** [APPROVED hoặc REVISE]
+* **Actual Impact Range:** [Confirmed list of modified files]
+* **Build Check:** [Automated compilation & test results from guard post]
+* **LLM Gate Verdict:** [APPROVED or REVISE]
 ```
 """

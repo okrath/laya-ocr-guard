@@ -170,16 +170,20 @@ AI coding agents tend to be hyperactive—installing heavy libraries for trivial
 ### 1. Bind Hooks to Any Target Repository (`guard hook`)
 Navigate to any target project repository and run:
 ```bash
-# Installs Git hooks and auto-configures CLAUDE.md & AGENT.md for AI agents
+# Interactive setup (prompts for Stealth, Agent-only, or Dual-Gate):
 guard hook install
+
+# Or quick flags:
+guard hook install --stealth      # 👻 Stealth Mode (Git hook only, zero workspace files, never pushed to remote)
+guard hook install --mode agent   # 🤖 Workspace Agent Directives (CLAUDE.md & AGENT.md)
+guard hook install --mode all     # 🛡️ Dual-Gate Full Protection (Git hooks + Agent Directives)
 
 # Inspect hook and agent directive status
 guard hook status
 
 # Safely uninstall hooks and restore previous user files
-guard hook uninstall
+guard hook uninstall [--mode <git|agent|all>]
 ```
-
 ### 2. Pre-Task Phase (`guard pre`)
 Execute before modifying source code:
 ```bash

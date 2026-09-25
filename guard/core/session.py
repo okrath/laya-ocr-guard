@@ -4,7 +4,7 @@ Persists and transitions state between PRE-TASK and POST-TASK:
 - Pre-task: intent, risk score, baseline contracts, locked invariants, target files
 - Post-task: actual diff stats, out-of-scope files, build status, rule violations, Muse verdict
 Stored at `<repo_root>/.guard/session.json`.
-Automatically ensures `.guard/` is ignored in `.gitignore`.
+Automatically ensures `.guard/` is ignored in `.gitignore` or local `.git/info/exclude`.
 """
 
 from __future__ import annotations
@@ -61,20 +61,20 @@ class BuildCheckResult(BaseModel):
     command: str
     passed: bool
     exit_code: int
-    output: str
+    output: str = ""
     duration_s: float
 
 
 class PostTaskRecord(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     files_modified: List[str] = Field(default_factory=list)
-    diff_summary: Optional[DiffSummary] = None
     out_of_scope_files: List[str] = Field(default_factory=list)
+    diff_summary: Optional[DiffSummary] = None
     build_check: Optional[BuildCheckResult] = None
     rule_violations: List[RuleViolation] = Field(default_factory=list)
     invariant_result: Optional[LayaInvariantResult] = None
     all_passed: bool = False
-    muse_verdict: str = "PENDING"  # "APPROVED", "REVISE"
+    muse_verdict: str = "PENDING"  # "APPROVED" or "REVISE"
     muse_score: float = 0.0
     muse_notes: str = ""
 
@@ -101,8 +101,26 @@ class SessionManager:
 
     def ensure_gitignore(self):
         """
-        Ensure `.guard/` is added to repository's `.gitignore`.
+        Ensure `.guard/` is ignored by Git.
+        Prefers local `.git/info/exclude` (Stealth mode - leaves zero trace in repo git status).
+        Falls back to `.gitignore` if not in a Git repository.
         """
+        git_dir = self.repo_path / ".git"
+        if git_dir.is_dir():
+            exclude_file = git_dir / "info" / "exclude"
+            try:
+                exclude_file.parent.mkdir(parents=True, exist_ok=True)
+                content = ""
+                if exclude_file.exists():
+                    content = exclude_file.read_text(encoding="utf-8", errors="ignore")
+                lines = [line.strip() for line in content.splitlines()]
+                if ".guard/" not in lines and ".guard" not in lines:
+                    new_content = content.rstrip() + ("\n" if content else "") + "\n# Laya-OCR-Guard stealth local exclude\n.guard/\n"
+                    exclude_file.write_text(new_content, encoding="utf-8")
+                return
+            except Exception:
+                pass
+
         gitignore_path = self.repo_path / ".gitignore"
         entry = "\n# Laya-OCR-Guard sessions\n.guard/\n"
         try:
@@ -156,7 +174,6 @@ class SessionManager:
             status=SessionStatus.AWAITING_POST,
             repo_path=str(self.repo_path),
             pre=pre_rec,
-            post=None,
         )
 
         self._save(session)
@@ -169,14 +186,12 @@ class SessionManager:
                 session_id=f"guard-{int(time.time())}",
                 status=SessionStatus.COMPLETED if post_rec.all_passed else SessionStatus.NEEDS_FIX,
                 repo_path=str(self.repo_path),
-                pre=None,
-                post=post_rec,
             )
         else:
-            session.post = post_rec
             session.status = SessionStatus.COMPLETED if post_rec.all_passed else SessionStatus.NEEDS_FIX
             session.updated_at = datetime.now(timezone.utc).isoformat()
 
+        session.post = post_rec
         self._save(session)
         return session
 
@@ -189,14 +204,11 @@ class SessionManager:
 
     def _save(self, session: GuardSession):
         self.guard_dir.mkdir(parents=True, exist_ok=True)
-        temp_file = self.guard_dir / f"session.json.tmp.{int(time.time()*1000)}"
+        temp_file = self.session_file.with_suffix(".tmp")
         try:
             with open(temp_file, "w", encoding="utf-8") as f:
-                json.dump(session.model_dump(mode="json"), f, indent=2)
+                f.write(session.model_dump_json(indent=2))
             temp_file.replace(self.session_file)
         except Exception:
-            # Fallback direct write
-            with open(self.session_file, "w", encoding="utf-8") as f:
-                json.dump(session.model_dump(mode="json"), f, indent=2)
             if temp_file.exists():
                 temp_file.unlink(missing_ok=True)

@@ -91,16 +91,20 @@ guard config sync
 Manages Git hooks and AI Agent directives in target repositories.
 
 ```bash
-# Install Git hooks and configure CLAUDE.md / AGENT.md:
-guard hook install [--mode <git|agent|all>]
+# Interactive setup (prompts for Stealth, Agent-only, or Dual-Gate):
+guard hook install
+
+# Or use specific mode:
+guard hook install --stealth      # 👻 Stealth Mode (Git hook only, zero workspace files)
+guard hook install --mode agent   # 🤖 Agent Directives only (CLAUDE.md & AGENT.md)
+guard hook install --mode all     # 🛡️ Dual-Gate Full Protection (Git hooks + Agent directives)
 
 # Check active status of hooks and directives:
 guard hook status
 
 # Safely uninstall hooks and restore previous user files:
-guard hook uninstall
+guard hook uninstall [--mode <git|agent|all>]
 ```
-
 ---
 
 ## 7. `guard update`
