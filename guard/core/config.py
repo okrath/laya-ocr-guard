@@ -46,10 +46,10 @@ class LLMConfig(BaseModel):
 
 
 class LayaConfig(BaseModel):
-    enabled: bool = Field(default=True, description="Enable Laya fast-reflex decision engine")
-    model_name: str = Field(default="laya", description="Model checkpoint: laya or laya-multilingual")
+    enabled: bool = Field(default=True, description="Laya decision engine always active")
+    model_name: str = Field(default="laya-int4", description="Model checkpoint: laya-int4 or laya-int8")
     device: str = Field(default="cpu", description="Inference device: cpu or cuda")
-    timeout_ms: int = Field(default=150, description="Fast-fail timeout in ms")
+    timeout_ms: int = Field(default=3000, description="Fast-fail timeout in ms")
 
 
 class OCRConfig(BaseModel):
@@ -238,9 +238,9 @@ def print_config_table(config: GuardConfig, path_info: str):
     table.add_row("LLM", "API Key", config.llm.masked_api_key)
     table.add_row("LLM", "Timeout", f"{config.llm.timeout}s")
 
-    table.add_row("Laya", "Enabled", str(config.laya.enabled))
-    table.add_row("Laya", "Model", config.laya.model_name)
-    table.add_row("Laya", "Device", config.laya.device)
+    table.add_row("Laya Neural", "Engine", "Always Active (Embedded ONNX)")
+    table.add_row("Laya Neural", "Model", config.laya.model_name)
+    table.add_row("Laya Neural", "Device", config.laya.device)
 
     table.add_row("Alibaba OCR", "Auto-Sync", str(config.ocr.auto_sync))
     table.add_row("Alibaba OCR", "CLI Binary", config.ocr.binary_path)

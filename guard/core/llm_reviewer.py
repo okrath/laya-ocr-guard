@@ -303,22 +303,30 @@ Git Diff:
         if not diff_summary or not diff_summary.raw_diff:
             return 'No diff'
         raw = diff_summary.raw_diff
+        # Filter out asset files, binary/data files, and large non-code JSON tables
+        chunks = raw.split('diff --git ')
+        code_chunks = []
+        for c in chunks:
+            if not c.strip():
+                continue
+            first_line = c.splitlines()[0] if c.splitlines() else ""
+            if any(k in first_line for k in ["assets/", ".lock", ".svg", ".png", ".onnx", "tokenizer.json"]):
+                continue
+            code_chunks.append(c)
+        if code_chunks:
+            raw = 'diff --git ' + 'diff --git '.join(code_chunks)
         if len(raw) <= 80000:
             return raw
-        # Prioritize application source code over markdown/docs
-        chunks = raw.split('diff --git ')
-        src_chunks = [c for c in chunks if c.startswith('a/src/')]
-        other_chunks = [c for c in chunks if not c.startswith('a/src/')]
-        ordered = src_chunks + other_chunks
-        return 'diff --git '.join(ordered)[:80000]
-
+        return raw[:80000]
     def _parse_llm_response(self, text: str, model_name: str = "LLM", focus: str = "all") -> Optional[LLMReviewVerdict]:
         try:
             score_match = re.search(r"SCORE:\s*([\d\.]+)", text)
+            verdict_match = re.search(r"VERDICT:\s*(APPROVED|REVISE)", text, re.IGNORECASE)
+            if not score_match and not verdict_match:
+                return None
+
             score = float(score_match.group(1)) if score_match else 8.0
             score = max(0.0, min(10.0, score))
-
-            verdict_match = re.search(r"VERDICT:\s*(APPROVED|REVISE)", text, re.IGNORECASE)
             verdict = ReviewVerdict.APPROVED if (verdict_match and verdict_match.group(1).upper() == "APPROVED") else ReviewVerdict.REVISE
 
             summary_match = re.search(r"SUMMARY:\s*(.+?)(?=\n[A-Z]+:|$)", text, re.DOTALL)

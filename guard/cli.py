@@ -89,7 +89,7 @@ def main_callback(
 def execute_pre_task(prompt: str, repo_path: Optional[Path] = None, quick: bool = False) -> bool:
     target_repo = Path(repo_path or Path.cwd()).resolve()
     config = load_config(target_repo)
-    laya = LayaEngine(prefer_neural=config.laya.enabled)
+    laya = LayaEngine(model_name=config.laya.model_name, device=config.laya.device)
 
     # 1. Detect Domain & Candidate Files
     repo_analyzer = detect_repo_domain(target_repo)
@@ -205,7 +205,7 @@ def execute_post_task(repo_path: Optional[Path] = None, auto_fix: bool = False, 
             )
 
     # 4. Laya Invariants Scoring
-    laya = LayaEngine(prefer_neural=config.laya.enabled)
+    laya = LayaEngine(model_name=config.laya.model_name, device=config.laya.device)
     inv_eval = laya.evaluate_invariants(
         invariants=invariants_dicts,
         git_diff=raw_diff,
@@ -814,12 +814,13 @@ def doctor_cmd(
         table.add_row("Alibaba OCR CLI", "ℹ️ Optional", "Run 'npm install -g @alibaba-group/open-code-review'")
 
     # Laya Engine
-    try:
-        import laya
-        table.add_row("Laya Neural Engine", "✅ Active", f"Native laya v{getattr(laya, '__version__', 'unknown')}")
-    except ImportError:
-        table.add_row("Laya Fast Reflex", "⚡ Fast Mode", "Sub-1ms Heuristic Reflex Matrix Active (Zero-overhead)")
-
+    from guard.core.laya_onnx import is_model_installed, get_model_path
+    cfg = load_config()
+    if is_model_installed(cfg.laya.model_name):
+        sz_mb = get_model_path(cfg.laya.model_name).stat().st_size / (1024 * 1024)
+        table.add_row("Laya Neural Engine", "✅ Active", f"Embedded ONNX ({cfg.laya.model_name}, {sz_mb:.1f} MB) on {cfg.laya.device.upper()}")
+    else:
+        table.add_row("Laya Neural Engine", "⚡ Ready", f"Assets OK. Run 'guard laya download' to cache {cfg.laya.model_name}")
     console.print(table)
 
     # 2. Supply-Chain Security & Update Quarantine Table (Focused on Alibaba OCR)
@@ -872,6 +873,132 @@ def doctor_cmd(
             "on QUARANTINE HOLD to protect against npm supply-chain backdoors.[/dim]\n"
         )
 
+# ---------------------------------------------------------
+# Laya Neural Engine Subcommands
+# ---------------------------------------------------------
+
+laya_app = typer.Typer(
+    name="laya",
+    help="🧠 Manage Laya Neural Decision Engine (Embedded ONNX runtime)",
+    no_args_is_help=False,
+)
+app.add_typer(laya_app, name="laya")
+
+
+@laya_app.callback(invoke_without_command=True)
+def laya_main(ctx: typer.Context):
+    if ctx.invoked_subcommand is None:
+        laya_status_cmd()
+
+
+@laya_app.command("status")
+def laya_status_cmd():
+    """Show Laya ONNX Neural Engine status, model paths, and device support."""
+    from guard.core.laya_onnx import (
+        DEFAULT_MODEL,
+        get_assets_dir,
+        get_laya_model_dir,
+        get_model_path,
+        is_model_installed,
+    )
+    import onnxruntime as ort
+
+    cfg = load_config()
+    model_name = cfg.laya.model_name or DEFAULT_MODEL
+    installed = is_model_installed(model_name)
+    m_path = get_model_path(model_name)
+
+    table = Table(title="🧠 Laya ONNX Neural Engine Status", show_header=True, header_style="bold magenta")
+    table.add_column("Property", style="bold", width=24)
+    table.add_column("Value")
+
+    table.add_row("Configured Model", model_name)
+    table.add_row("Model Cache Dir", str(get_laya_model_dir()))
+    table.add_row("Model File Path", str(m_path))
+
+    if installed:
+        sz_mb = m_path.stat().st_size / (1024 * 1024)
+        table.add_row("Model Status", f"✅ Active ({sz_mb:.1f} MB cached)")
+    else:
+        table.add_row("Model Status", "⚡ Not yet downloaded (Run 'guard laya download')")
+
+    available_providers = ort.get_available_providers()
+    cuda_avail = "CUDAExecutionProvider" in available_providers
+    table.add_row("Hardware Acceleration", f"CUDA: {'✅ Available' if cuda_avail else '⚪ Inactive'}, CPU: ✅ Active")
+    table.add_row("Configured Device", cfg.laya.device.upper())
+
+    tok_file = get_assets_dir() / "tokenizer.json"
+    table.add_row("Embedded Tokenizer", "✅ Ready" if tok_file.exists() else "❌ Missing")
+
+    console.print(table)
+
+
+@laya_app.command("download")
+def laya_download_cmd(
+    model: str = typer.Option("laya-int4", "--model", "-m", help="Model checkpoint: laya-int4 (262MB) or laya-int8 (554MB)"),
+    force: bool = typer.Option(False, "--force", "-f", help="Re-download model even if already cached"),
+):
+    """Download quantized Laya ONNX weights from HuggingFace."""
+    from guard.core.laya_onnx import (
+        download_laya_model,
+        get_model_path,
+        is_model_installed,
+    )
+    from rich.progress import BarColumn, DownloadColumn, Progress, TextColumn, TimeRemainingColumn, TransferSpeedColumn
+
+    norm_key = "laya-int4" if "int4" in model.lower() else "laya-int8"
+    if is_model_installed(norm_key) and not force:
+        console.print(f"[bold green]✅ Model '{norm_key}' is already downloaded at: {get_model_path(norm_key)}[/bold green]")
+        return
+
+    console.print(f"[bold cyan]📥 Downloading Laya ONNX ({norm_key}) from HuggingFace...[/bold cyan]")
+    progress = Progress(
+        TextColumn("[bold blue]{task.description}"),
+        BarColumn(),
+        DownloadColumn(),
+        TransferSpeedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    )
+
+    with progress:
+        task_id = progress.add_task(f"Downloading {norm_key}", total=100_000_000)
+
+        def cb(downloaded, total):
+            progress.update(task_id, completed=downloaded, total=total)
+
+        try:
+            dest = download_laya_model(model_name=norm_key, progress_callback=cb)
+            console.print(f"[bold green]✅ Successfully downloaded and verified Laya ONNX ({norm_key}) at:[/bold green] {dest}")
+        except Exception as e:
+            console.print(f"[bold red]❌ Download failed:[/bold red] {e}")
+            raise typer.Exit(1)
+
+
+@laya_app.command("triage")
+def laya_triage_cmd(
+    prompt: str = typer.Argument(..., help="Task prompt to triage"),
+):
+    """Run interactive Laya System 1 Triage on a prompt."""
+    cfg = load_config()
+    laya = LayaEngine(model_name=cfg.laya.model_name, device=cfg.laya.device)
+    res = laya.triage(prompt=prompt)
+
+    table = Table(title=f"🛡️ Laya Triage Result ({res.engine_mode})", show_header=True, header_style="bold cyan")
+    table.add_column("Metric", style="bold")
+    table.add_column("Value")
+
+    table.add_row("Prompt", prompt)
+    dom_val = str(res.domain.value) if hasattr(res.domain, "value") else str(res.domain)
+    table.add_row("Domain", f"[bold green]{dom_val.upper()}[/bold green]")
+    int_val = str(res.intent.value) if hasattr(res.intent, "value") else str(res.intent)
+    table.add_row("Intent", f"[bold yellow]{int_val.upper()}[/bold yellow]")
+    table.add_row("Risk Level", f"[bold]{res.risk_score_label}[/bold]")
+    table.add_row("Core Breach", "🚨 YES (High Risk Area)" if res.core_breach_risk else "✅ NO (Safe Scope)")
+    table.add_row("Engine Latency", f"{res.latency_ms:.2f} ms")
+    table.add_row("Reasoning", res.reasoning)
+
+    console.print(table)
 
 def main():
     maybe_trigger_background_update_check()

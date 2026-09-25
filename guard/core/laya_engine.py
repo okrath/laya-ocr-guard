@@ -116,24 +116,30 @@ LAYA_TRIAGE_QUESTIONS = {
 
 class LayaEngine:
     """
-    Dual-mode Laya decision engine.
-    Attempts to initialize `laya.Router` if available; otherwise operates in
-    sub-1ms Lightweight Reflex mode.
+    Embedded Laya Neural Decision Engine.
+    Executes native ONNX System 1 triage (quantized ModernBERT) when model weights
+    are cached locally, with instant heuristic fallback when offline.
     """
 
-    def __init__(self, prefer_neural: bool = False):
+    def __init__(self, model_name: str = "laya-int4", device: str = "cpu", prefer_neural: bool = True):
+        self.model_name = model_name
+        self.device = device
         self.prefer_neural = prefer_neural
         self._router = None
-        self._mode = "reflex_fast"
 
         if prefer_neural:
-            try:
-                from laya import Router
-                self._router = Router(preload=False)
-                self._mode = "laya_neural"
-            except Exception:
-                self._router = None
-                self._mode = "reflex_fast"
+            from guard.core.laya_onnx import is_model_installed
+            if is_model_installed(self.model_name):
+                self._mode = "laya_onnx_neural"
+            else:
+                try:
+                    from laya import Router
+                    self._router = Router(preload=False)
+                    self._mode = "laya_neural"
+                except Exception:
+                    self._mode = "reflex_fast"
+        else:
+            self._mode = "reflex_fast"
 
     @property
     def mode(self) -> str:
@@ -142,9 +148,53 @@ class LayaEngine:
     def triage(self, prompt: str, context_files: Optional[List[str]] = None) -> LayaTriageResult:
         """
         Fast triage of incoming prompt.
-        Latency: <30ms (neural) or <1ms (reflex_fast).
+        Latency: ~50-150ms (neural ONNX) or <1ms (reflex_fast).
         """
         start = time.perf_counter()
+
+        # 1. Native Embedded ONNX Path (Preferred)
+        if self.prefer_neural:
+            from guard.core.laya_onnx import is_model_installed, LayaONNXRuntime
+            if is_model_installed(self.model_name):
+                try:
+                    state_text = f"Task: {prompt.strip()}"
+                    if context_files:
+                        state_text += f"\nContext files: {', '.join(context_files)}"
+
+                    answers = LayaONNXRuntime.predict_questions(
+                        state=state_text,
+                        questions=LAYA_TRIAGE_QUESTIONS,
+                        model_name=self.model_name,
+                        device=self.device,
+                    )
+
+                    domain_str = answers.get("domain", {}).get("choice", "backend")
+                    intent_str = answers.get("intent", {}).get("choice", "feature")
+                    risk_idx = int(answers.get("risk_level", {}).get("index", 1))
+                    core_breach = bool(answers.get("core_breach", {}).get("index", 0) == 1)
+                    conf = answers.get("domain", {}).get("confidence", 0.95)
+
+                    latency = (time.perf_counter() - start) * 1000
+                    labels = {
+                        RiskLevel.LOW: "1/4 (Low)",
+                        RiskLevel.MEDIUM: "2/4 (Medium)",
+                        RiskLevel.HIGH: "3/4 (High)",
+                        RiskLevel.CRITICAL: "4/4 (Critical)",
+                    }
+                    risk_level = RiskLevel(min(max(risk_idx + 1, 1), 4))
+
+                    return LayaTriageResult(
+                        domain=DomainType(domain_str),
+                        intent=TaskIntent(intent_str),
+                        risk_level=risk_level,
+                        risk_score_label=labels[risk_level],
+                        core_breach_risk=core_breach,
+                        latency_ms=latency,
+                        engine_mode="laya_onnx_neural",
+                        reasoning=f"Neural triage via Laya ONNX ({self.model_name}) in {latency:.1f}ms [Confidence: {conf*100:.1f}%]",
+                    )
+                except Exception:
+                    pass
 
         if self._mode == "laya_neural" and self._router is not None:
             try:
@@ -174,7 +224,6 @@ class LayaEngine:
             except Exception:
                 # Fall back to reflex engine
                 pass
-
         # Lightweight Reflex Engine (Sub-1ms)
         p_lower = prompt.lower()
         files_str = " ".join(context_files or []).lower()
