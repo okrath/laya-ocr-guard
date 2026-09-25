@@ -181,23 +181,34 @@ AI coding agents tend to be hyperactive—installing heavy libraries for trivial
 
 ## 📖 CLI Usage Workflows
 
-### 1. Bind Hooks to Any Target Repository (`guard hook`)
-Navigate to any target project repository and run:
+### 1. Bind Hooks to Any Target Repository or Workspace (`guard hook`)
+Navigate to any target project repository, multi-repo workspace, or install globally across your machine:
+
 ```bash
-# Interactive setup (prompts for Stealth, Agent-only, or Dual-Gate):
+# Interactive setup (auto-detects single repo vs multi-repo workspace):
 guard hook install
 
-# Or quick flags:
-guard hook install --stealth      # 👻 Stealth Mode (Git hook only, zero workspace files, never pushed to remote)
-guard hook install --mode agent   # 🤖 Workspace Agent Directives (CLAUDE.md & AGENT.md)
-guard hook install --mode all     # 🛡️ Dual-Gate Full Protection (Git hooks + Agent Directives)
+# Workspace / Multi-Repo Mode (auto-discovers child Git repositories):
+# Prompts to select: [A] All repos, [1-N] specific repos (e.g. 2,3,7,8), [G] Global, or [N] None
+guard hook install --all-repos              # Install Git hooks to all discovered child repos
+guard hook install --select-repos "1,2"     # Selectively install to specific child repos
 
-# Inspect hook and agent directive status
+# Global Git Protection (Protects EVERY repository on your machine automatically):
+guard hook install --global                 # Sets git config --global core.hooksPath ~/.guard/hooks
+
+# Single Repo Shortcuts:
+guard hook install --stealth                # 👻 Stealth Mode (Git hook only, zero workspace files, never pushed to remote)
+guard hook install --mode agent             # 🤖 Workspace Agent Directives (CLAUDE.md & AGENT.md)
+guard hook install --mode all               # 🛡️ Dual-Gate Full Protection (Git hooks + Agent Directives)
+
+# Inspect hook and agent directive status (including child repos and global hooks):
 guard hook status
 
-# Safely uninstall hooks and restore previous user files
-guard hook uninstall [--mode <git|agent|all>]
+# Safely uninstall hooks and restore previous user files:
+guard hook uninstall [--mode <git|agent|all>] [--global]
 ```
+
+> 🔒 **Strict Safe-Append Policy:** Guard NEVER overwrites existing user `CLAUDE.md` or `AGENT.md` directives. It creates a `.guard.bak` backup and cleanly appends Guard protocol markers. Uninstallation cleanly restores user files.
 ### 2. Pre-Task Phase (`guard pre`)
 Execute before modifying source code:
 ```bash

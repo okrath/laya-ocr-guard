@@ -394,13 +394,17 @@ guard doctor</code></pre>
       <pre><code>guard hook install</code></pre>
       <p>This provides flexible protection profiles tailored for any workflow:</p>
       <ol>
+        <li><strong>Multi-Repo Workspace Mode:</strong> Running <code>guard hook install</code> inside an outer workspace folder automatically scans all child Git repositories. The interactive menu lets you choose <code>[A]</code> (all child repos), <code>[1-N]</code> (specific repos like <code>2,3,7,8</code>), <code>[G]</code> (Global Git hooks), or <code>[N]</code> (Agent directives only at workspace root).</li>
+        <li><strong>Global Git Hooks (<code>--global</code> / <code>-g</code>):</strong> Configures <code>git config --global core.hooksPath ~/.guard/hooks</code> to protect <strong>every Git repository on your machine automatically</strong> with zero per-repo setup required.</li>
         <li><strong>Ghost / Stealth Mode (<code>--stealth</code> / <code>--mode git</code>):</strong> Installs local <code>.git/hooks/pre-commit</code> and configures <code>.git/info/exclude</code>. Zero workspace footprint (no files ever pushed to remote; ideal for company or client repos).</li>
-        <li><strong>Agent Directives (<code>--mode agent</code>):</strong> Generates <code>CLAUDE.md</code> and <code>AGENT.md</code> in workspace root and <code>.guard/bin/guard-exec</code> harness wrapper so agents automatically run <code>guard pre</code> before editing and <code>guard post</code> after completing edits.</li>
+        <li><strong>Agent Directives (<code>--mode agent</code>):</strong> Safely appends Guard protocols to <code>CLAUDE.md</code> and <code>AGENT.md</code> in workspace root (backed up to <code>.guard.bak</code>, never overwriting existing user directives).</li>
         <li><strong>Dual-Gate Full Protection (<code>--mode all</code>):</strong> Combines Git pre-commit hook enforcement, workspace agent directives, and harness wrapper script.</li>
       </ol>
-      <p>Check hook and agent directive status at any time:</p>
+      <div class="card" style="margin-top: 16px;">
+        <strong>🔒 Strict Safe-Append Policy:</strong> Guard never overwrites your existing instructions. Directives are wrapped in <code>&lt;!-- === LAYA-OCR-GUARD DUAL-GATE HOOK === --&gt;</code> markers with automatic <code>.guard.bak</code> backups.
+      </div>
+      <p style="margin-top: 16px;">Check hook and agent directive status at any time:</p>
       <pre><code>guard hook status</code></pre>
-    </section>
 
     <section id="cli-reference">
       <h2>7. CLI Command Reference</h2>
@@ -445,8 +449,8 @@ guard doctor</code></pre>
           </tr>
           <tr>
             <td><code>guard hook install</code></td>
-            <td>Install Git hooks and/or CLAUDE.md/AGENT.md directives</td>
-            <td><code>--stealth</code>, <code>--mode &lt;git|agent|all&gt;</code></td>
+            <td>Install Git hooks (single repo, child repos in workspace, or machine-wide global)</td>
+            <td><code>--global</code>, <code>--stealth</code>, <code>--all-repos</code>, <code>--select-repos &lt;list&gt;</code></td>
           </tr>
           <tr>
             <td><code>guard update</code></td>

@@ -88,23 +88,41 @@ guard config sync
 
 ## 6. `guard hook`
 
-Manages Git hooks and AI Agent directives in target repositories.
+Manages Git hooks, AI Agent directives, and multi-repo workspace protection.
 
 ```bash
-# Interactive setup (prompts for Stealth, Agent-only, or Dual-Gate):
+# Interactive setup (auto-detects single repo vs multi-repo workspace):
 guard hook install
 
-# Or use specific mode:
-guard hook install --stealth      # 👻 Stealth Mode (Git hook only, zero workspace files)
-guard hook install --mode agent   # 🤖 Agent Directives only (CLAUDE.md & AGENT.md)
-guard hook install --mode all     # 🛡️ Dual-Gate Full Protection (Git hooks + Agent directives)
+# Workspace / Multi-Repo Mode (auto-discovers child Git repositories):
+# Interactive menu: [A] All repos, [1-N] specific repos (e.g. 2,3,7,8), [G] Global, [N] None
+guard hook install --all-repos              # Install Git hooks to all discovered child repos
+guard hook install --select-repos "1,2"     # Selectively install to specific child repos
 
-# Check active status of hooks and directives:
+# Global Git Protection (Protects EVERY repository on your machine automatically):
+guard hook install --global                 # Sets git config --global core.hooksPath ~/.guard/hooks
+
+# Single Repo Shortcuts:
+guard hook install --stealth                # 👻 Stealth Mode (Git hook only, zero workspace files)
+guard hook install --mode agent             # 🤖 Agent Directives only (CLAUDE.md & AGENT.md)
+guard hook install --mode all               # 🛡️ Dual-Gate Full Protection (Git hooks + Agent directives)
+
+# Check active status of hooks, child repositories, and global hooks:
 guard hook status
 
 # Safely uninstall hooks and restore previous user files:
-guard hook uninstall [--mode <git|agent|all>]
+guard hook uninstall [--mode <git|agent|all>] [--global]
 ```
+
+### Options for `guard hook install`:
+* `-r, --repo <path>`: Target repository or workspace directory.
+* `-m, --mode <git|agent|all>`: Installation mode (`git`, `agent`, `all`).
+* `-s, --stealth`: Shortcut for `--mode git` (zero workspace files, Git hooks only).
+* `-g, --global`: Configure Git hooks globally for all repositories via `git config --global core.hooksPath ~/.guard/hooks`.
+* `--all-repos`: Automatically install Git hooks into all discovered child Git repositories in workspace mode.
+* `--select-repos <indices|names>`: Comma-separated list of child repo numbers (e.g. `2,3,7,8`) or folder names.
+
+> 🔒 **Strict Safe-Append Policy:** Guard NEVER overwrites existing user `CLAUDE.md` or `AGENT.md` files. It creates a `.guard.bak` backup and cleanly appends Guard protocol markers.
 ---
 
 ## 7. `guard update`
