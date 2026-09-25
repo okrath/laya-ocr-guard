@@ -10,5 +10,7 @@ def isolate_global_guard_config(tmp_path_factory):
     """
     dummy_dir = tmp_path_factory.mktemp("dummy_guard_home")
     dummy_config = dummy_dir / "nonexistent_config.json"
-    with patch("guard.core.config.get_global_config_path", return_value=dummy_config):
+    dummy_session = dummy_dir / "active_session.json"
+    with patch("guard.core.config.get_global_config_path", return_value=dummy_config), \
+         patch("guard.core.session.SessionManager._get_global_active_session_file", return_value=dummy_session):
         yield

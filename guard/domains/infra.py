@@ -25,7 +25,7 @@ class InfraDomainAnalyzer(BaseDomainAnalyzer):
             "docker-compose.yml",
             "docker-compose.yaml",
             "main.tf",
-            ".github/workflows",
+            # CI config alone (.github/workflows) does not make a repo infrastructure
             "k8s",
             "helm",
             "nginx.conf",

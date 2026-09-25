@@ -24,6 +24,7 @@ class FileDiffStat(BaseModel):
     insertions: int = 0
     deletions: int = 0
     is_out_of_scope: bool = False
+    preexisting: bool = False  # Already dirty before pre-task and left unchanged by this task
 
 
 class DiffSummary(BaseModel):
@@ -74,7 +75,7 @@ class GitDiffInspector:
         if not self.is_git_repo():
             return ""
 
-        cmd = ["git", "-C", str(self.repo_path), "diff"]
+        cmd = ["git", "-C", str(self.repo_path), "-c", "core.quotepath=false", "diff"]
         if staged_only:
             cmd.append("--staged")
         elif base_ref:
@@ -97,7 +98,7 @@ class GitDiffInspector:
                 diff_output = res.stdout
             else:
                 res2 = subprocess.run(
-                    ["git", "-C", str(self.repo_path), "diff"],
+                    ["git", "-C", str(self.repo_path), "-c", "core.quotepath=false", "diff"],
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
@@ -142,52 +143,80 @@ class GitDiffInspector:
 
         return diff_output or ""
 
-    def get_untracked_files(self) -> List[str]:
+    def _porcelain_entries(self) -> List[tuple]:
+        """
+        (XY status, path) for every changed file. `-z` gives raw, unquoted paths (spaces, unicode)
+        and reports renames as `new NUL old`; `-uall` lists files inside new directories.
+        """
         if not self.is_git_repo():
             return []
         try:
             res = subprocess.run(
-                ["git", "-C", str(self.repo_path), "status", "--porcelain"],
+                ["git", "-C", str(self.repo_path), "status", "--porcelain", "-z", "-uall"],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
                 check=False,
             )
-            files = []
-            stdout_text = res.stdout or ""
-            for line in stdout_text.splitlines():
-                if line.startswith("?? "):
-                    files.append(line[3:].strip())
-            return files
         except Exception:
             return []
+        parts = (res.stdout or "").split("\0")
+        entries = []
+        i = 0
+        while i < len(parts):
+            item = parts[i]
+            i += 1
+            if len(item) < 4:
+                continue
+            xy, path = item[:2], item[3:]
+            if "R" in xy or "C" in xy:
+                i += 1  # skip the original path of a rename/copy
+            entries.append((xy, path))
+        return entries
+
+    def get_untracked_files(self) -> List[str]:
+        return [path for xy, path in self._porcelain_entries() if xy == "??"]
 
     def get_working_files(self) -> List[str]:
         """
         Returns all files currently touched in the working directory (staged, modified, or untracked).
         """
-        if not self.is_git_repo():
-            return []
+        return [
+            path for _, path in self._porcelain_entries()
+            if not path.startswith(".guard") and path != ".gitignore"
+        ]
+
+    def create_baseline_snapshot(self) -> Optional[str]:
+        """
+        Commit object of the current dirty tracked state, without touching the working tree or
+        index (`git stash create`). Pinned under refs/guard/baseline so gc cannot prune it.
+        """
         try:
             res = subprocess.run(
-                ["git", "-C", str(self.repo_path), "status", "--porcelain"],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                check=False,
+                ["git", "-C", str(self.repo_path), "stash", "create", "guard pre-task baseline"],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
             )
-            files = []
-            stdout_text = res.stdout or ""
-            for line in stdout_text.splitlines():
-                if len(line) >= 4:
-                    filepath = line[3:].strip()
-                    if filepath and not filepath.startswith(".guard") and filepath != ".gitignore":
-                        files.append(filepath)
-            return files
+            sha = (res.stdout or "").strip()
+            if not sha:
+                return None
+            subprocess.run(
+                ["git", "-C", str(self.repo_path), "update-ref", "refs/guard/baseline", sha],
+                capture_output=True, check=False,
+            )
+            return sha
         except Exception:
-            return []
+            return None
+
+    def get_head(self) -> Optional[str]:
+        try:
+            res = subprocess.run(
+                ["git", "-C", str(self.repo_path), "rev-parse", "--verify", "-q", "HEAD"],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
+            )
+            return res.stdout.strip() or None
+        except Exception:
+            return None
 
     def parse_diff(self, raw_diff: Optional[str], expected_files: Optional[List[str]] = None) -> DiffSummary:
         """
@@ -238,21 +267,100 @@ class GitDiffInspector:
         )
 
     def _is_expected(self, file_path: str, expected_files: List[str]) -> bool:
+        """
+        Match on path boundaries only: exact path, bare filename, directory prefix, or glob.
+        (Suffix matching would let `a.ts` cover `src/data.ts`.)
+        """
         fp_norm = file_path.replace("\\", "/").lower()
         # System & Guard files are always allowed
         if fp_norm in [".gitignore", ".guard/session.json"] or fp_norm.startswith(".guard/"):
             return True
+        basename = fp_norm.rsplit("/", 1)[-1]
         for exp in expected_files:
             exp_norm = exp.replace("\\", "/").lower()
-            # If expected item is a directory pattern (e.g. "docs/" or "docs")
-            if exp_norm.endswith("/"):
-                if fp_norm.startswith(exp_norm):
-                    return True
-            if "/" not in exp_norm and (fp_norm.startswith(f"{exp_norm}/") or f"/{exp_norm}/" in fp_norm):
+            if exp_norm.startswith("./"):
+                exp_norm = exp_norm[2:]
+            if not exp_norm:
+                continue
+            # Literal match first, so paths like `app/[id]/page.tsx` still match themselves
+            if fp_norm == exp_norm or fp_norm.startswith(exp_norm.rstrip("/") + "/"):
                 return True
-            if fp_norm == exp_norm or fp_norm.endswith(exp_norm) or exp_norm.endswith(fp_norm):
+            if "/" not in exp_norm and basename == exp_norm:
+                return True
+            if any(ch in exp_norm for ch in "*?[") and glob_to_regex(exp_norm).match(fp_norm):
                 return True
         return False
+
+
+def glob_to_regex(pattern: str) -> "re.Pattern[str]":
+    """Path glob: `*`/`?` stay inside one directory, `**` spans directories, `[...]` is a class."""
+    out = []
+    i = 0
+    while i < len(pattern):
+        c = pattern[i]
+        if pattern.startswith("**/", i):
+            out.append("(?:.*/)?")
+            i += 3
+        elif pattern.startswith("**", i):
+            out.append(".*")
+            i += 2
+        elif c == "*":
+            out.append("[^/]*")
+            i += 1
+        elif c == "?":
+            out.append("[^/]")
+            i += 1
+        elif c == "[" and "]" in pattern[i + 1:]:
+            j = pattern.index("]", i + 1)
+            out.append("[" + pattern[i + 1:j].replace("\\", "\\\\") + "]")
+            i = j + 1
+        else:
+            out.append(re.escape(c))
+            i += 1
+    return re.compile("".join(out) + r"(?:/.*)?$")
+
+
+def _unsafe_html_sinks(code: str) -> int:
+    """
+    Count innerHTML / outerHTML assignments on one line whose value is not provably safe.
+    Safe values: an empty literal, or a value that is exactly one DOMPurify.sanitize(...) call.
+    """
+    code = re.sub(r"\s//.*$", "", code)  # drop trailing line comment
+    unsafe = 0
+    for m in re.finditer(r"\b(?:inner|outer)HTML\s*\+?=(?!=)", code):
+        rhs = code[m.end():]
+        # value runs until the first `;` that is not inside a string or parentheses
+        depth, quote, end = 0, "", len(rhs)
+        for k, ch in enumerate(rhs):
+            if quote:
+                if ch == quote and rhs[k - 1] != "\\":
+                    quote = ""
+            elif ch in "'\"`":
+                quote = ch
+            elif ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            elif ch == ";" and depth <= 0:
+                end = k
+                break
+        value = rhs[:end].strip()
+        if re.fullmatch(r"(['\"`])\1", value):
+            continue
+        call = re.match(r"DOMPurify\.sanitize\(", value)
+        if call:
+            depth = 0
+            for k, ch in enumerate(value[call.end() - 1:], start=call.end() - 1):
+                depth += ch == "("
+                depth -= ch == ")"
+                if depth == 0:
+                    if not value[k + 1:].strip():
+                        break
+                    unsafe += 1
+                    break
+            continue
+        unsafe += 1
+    return unsafe
 
 
 class OCRRulebookRunner:
@@ -271,8 +379,10 @@ class OCRRulebookRunner:
     )
     # Pillar: Security - Cross-Site Scripting (XSS)
     XSS_REGEX = re.compile(
-        r"""(?i)(dangerouslySetInnerHTML\s*=|innerHTML\s*=|\bv-html\s*=)"""
+        r"""(?i)(dangerouslySetInnerHTML\s*=|(?:inner|outer)HTML\s*\+?=(?!=)|\bv-html\s*=)"""
     )
+    # Explicit, reviewable suppression: `// guard-allow SEC-003: <reason>` on the same line
+    SUPPRESS_REGEX = re.compile(r"guard-allow\s+([A-Z]+-\d+)\s*:\s*(\S.*)")
     # Pillar: Memory Safety - Dangling Listener without remover in component
     DANGLING_LISTENER = re.compile(
         r"""addEventListener\s*\(["'](resize|scroll|mousemove|keydown)["']"""
@@ -341,15 +451,31 @@ class OCRRulebookRunner:
                     ))
 
                 # Rule 3: Cross-Site Scripting (XSS) (Security)
-                if self.XSS_REGEX.search(added_code) and "sanitize" not in added_code.lower() and not is_test_file:
-                    violations.append(RuleViolation(
-                        rule_id="SEC-003",
-                        severity="HIGH",
-                        file_path=current_file,
-                        line_number=line_num,
-                        message="Raw HTML injection detected (dangerouslySetInnerHTML / innerHTML / v-html). Sanitize input via DOMPurify.",
-                        snippet=added_code[:80],
-                    ))
+                # A comment mentioning "sanitize" no longer exempts the line; only a provably safe
+                # value or an explicit `guard-allow SEC-003: reason` marker does (reported as LOW).
+                if self.XSS_REGEX.search(added_code) and not is_test_file and (
+                    re.search(r"dangerouslySetInnerHTML|\bv-html", added_code, re.IGNORECASE)
+                    or _unsafe_html_sinks(added_code) > 0
+                ):
+                    suppress = self.SUPPRESS_REGEX.search(added_code)
+                    if suppress and suppress.group(1) == "SEC-003":
+                        violations.append(RuleViolation(
+                            rule_id="SEC-003",
+                            severity="LOW",
+                            file_path=current_file,
+                            line_number=line_num,
+                            message=f"innerHTML sink suppressed by author: {suppress.group(2).strip()[:120]}",
+                            snippet=added_code[:80],
+                        ))
+                    else:
+                        violations.append(RuleViolation(
+                            rule_id="SEC-003",
+                            severity="HIGH",
+                            file_path=current_file,
+                            line_number=line_num,
+                            message="Raw HTML injection detected (dangerouslySetInnerHTML / innerHTML / v-html). Use textContent, DOMPurify.sanitize(), or mark `// guard-allow SEC-003: <reason>`.",
+                            snippet=added_code[:80],
+                        ))
 
                 # Rule 4: Memory leak / Dangling Event Listener (Memory Safety)
                 if self.DANGLING_LISTENER.search(added_code) and "removeEventListener" not in diff_text and not is_test_file:

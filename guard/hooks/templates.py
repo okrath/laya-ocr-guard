@@ -2,11 +2,31 @@
 Hook Script Templates for Git and AI Coding Agents.
 """
 
+# Shared prelude: a global core.hooksPath hides each repository's own hooks, so run them first.
+# --git-common-dir (not --git-dir) so linked worktrees find the main repository's hooks.
+# A repo-local guard hook is skipped (it would run guard twice) but its .guard.bak original is run.
+_CHAIN_LOCAL_HOOKS = """SELF_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+HOOK_NAME="$(basename "$0")"
+LOCAL_DIR="$(cd "$(git rev-parse --git-common-dir 2>/dev/null)/hooks" 2>/dev/null && pwd -P)"
+if [ -n "$LOCAL_DIR" ] && [ "$LOCAL_DIR" != "$SELF_DIR" ] && [ -x "$LOCAL_DIR/$HOOK_NAME" ] \\
+   && ! grep -q "LAYA-OCR-GUARD" "$LOCAL_DIR/$HOOK_NAME"; then
+  "$LOCAL_DIR/$HOOK_NAME" "$@" || exit $?
+fi
+if [ -n "$LOCAL_DIR" ] && [ -x "$LOCAL_DIR/$HOOK_NAME.guard.bak" ]; then
+  "$LOCAL_DIR/$HOOK_NAME.guard.bak" "$@" || exit $?
+fi
+"""
+
 # Git pre-commit hook: runs guard post to verify build, blast radius, and invariants before allowing commit
 GIT_PRE_COMMIT_HOOK = """#!/usr/bin/env sh
 # --- LAYA-OCR-GUARD AUTO-GENERATED HOOK ---
+""" + _CHAIN_LOCAL_HOOKS + """if ! command -v guard >/dev/null 2>&1; then
+  echo "⚠️  Laya-OCR-Guard: 'guard' is not on PATH, skipping guard check."
+  exit 0
+fi
 echo "🛡️  Running Laya-OCR-Guard Pre-Commit Check..."
-guard post
+# --hook: repositories without an open or rejected guard session are skipped instead of blocked
+guard post --hook
 STATUS=$?
 if [ $STATUS -ne 0 ]; then
   echo "❌ Guard Verification FAILED! Commit aborted."
@@ -20,21 +40,22 @@ exit 0
 # Git prepare-commit-msg hook template
 GIT_PREPARE_COMMIT_MSG_HOOK = """#!/usr/bin/env sh
 # --- LAYA-OCR-GUARD COMMIT MSG HOOK ---
-exit 0
+""" + _CHAIN_LOCAL_HOOKS + """exit 0
 """
 
 # Agent wrapper script template (for command line harness execution)
+# Extra pre-task flags (e.g. --scope src/ui --force) are passed through GUARD_PRE_ARGS.
 AGENT_WRAPPER_SCRIPT = """#!/usr/bin/env sh
 # --- LAYA-OCR-GUARD AGENT HARNESS ---
 PROMPT="$1"
 shift
-CMD="$@"
 
 echo "🛡️  [1/3] Triggering Pre-Task Guard..."
-guard pre "$PROMPT" || exit 1
+# shellcheck disable=SC2086
+guard pre "$PROMPT" $GUARD_PRE_ARGS || exit 1
 
-echo "🤖 [2/3] Executing Agent Command: $CMD"
-$CMD
+echo "🤖 [2/3] Executing Agent Command: $*"
+"$@"
 CMD_STATUS=$?
 
 echo "🧪 [3/3] Triggering Post-Task Guard..."
@@ -60,7 +81,7 @@ To strictly prevent regressions, feature breakage, and unintended code loss, **A
              ▼
 ┌────────────────────────────────────────────────────────┐
 │ 1. PRE-TASK HOOK (MANDATORY BEFORE TOUCHING ANY CODE): │
-│ • Run: `guard pre "<user_request>"`                    │
+│ • Run: `guard pre "<user_request>" --scope <path/glob>`│
 │ • Read: `.guard/PRE_TASK_NOTE.md` to learn Invariants  │
 │ • Present format: ### 🔍 PRE-TASK IMPACT NOTE          │
 └────────────────────────────────────────────────────────┘
@@ -75,6 +96,12 @@ To strictly prevent regressions, feature breakage, and unintended code loss, **A
 │ • Present format: ### 🧪 POST-TASK VERIFICATION       │
 └────────────────────────────────────────────────────────┘
 ```
+
+**Gate rules:**
+- Run `guard pre` on a clean working tree, before the first edit. It refuses a dirty tree unless `--allow-dirty` (for unrelated work that must stay; the report flags every pre-existing change). An unfinished or rejected session can only be restarted with `--force`: the restart keeps the original baseline, base commit and scope, is recorded in the report, and files covered only by scope added in the restart fail as SCOPE-004.
+- Declare scope with file names in the request or `--scope` (repeatable, globs allowed). Without a scope, the post report says scope was not audited.
+- Project invariants live in `guard.invariants.json` (`checks`: `{"files": glob, "forbid"|"require": regex}`). Invariants without checks are reported as UNVERIFIED and must be verified manually.
+- The report names the gate that actually ran: "LLM Gate" only when the LLM answered, otherwise "Heuristic Gate" plus the reason.
 
 ---
 

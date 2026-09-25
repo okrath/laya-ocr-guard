@@ -133,7 +133,8 @@ def test_simplicity_violations_and_net_loc_reporter():
     md = generate_post_task_markdown(post)
     assert "Engineering Frugality & Simplicity Alerts (KISS / YAGNI):" in md
     assert "LAZY-001" in md
-    assert "Code Debt Reduction Bonus" in md
+    assert "Code Debt Reduction Bonus" not in md
+    assert "Heuristic Gate (no LLM review)" in md
     assert "-35 LOC" in md
 
     # Ensure terminal render runs cleanly

@@ -229,8 +229,30 @@ guard hook uninstall [--mode <git|agent|all>] [--global]
 Execute before modifying source code:
 ```bash
 guard pre "Refactor checkout button to sticky bottom on mobile, update CSS and responsive modal"
+
+# Declare scope explicitly (repeatable, globs allowed) when the prompt names no files:
+guard pre "Review and fix bugs in the chat UI" --scope src/ui --scope src/ai/service.ts
 ```
+A directory scope (`src/ui`) covers everything below it. Prefer it over `"src/ui/**"` on Windows, where the `guard.exe` launcher expands glob arguments even when they are quoted.
 *Output:* Analyzes risk, locks baseline invariants, and generates `### 🔍 PRE-TASK IMPACT NOTE` in `.guard/PRE_TASK_NOTE.md`.
+
+Gate rules that keep the pre-task gate meaningful:
+- The domain comes from the repository files; the prompt triage is only shown as a hint.
+- Scope is only what the prompt names or `--scope` declares. Files that are already dirty are never added to it. With no scope, the post report says scope was not audited instead of flagging every file.
+- A dirty working tree is refused. `--allow-dirty` records those files as a pre-existing baseline and snapshots them with `git stash create` (pinned at `refs/guard/baseline`; the working tree is not touched). Post then reviews only the edits made after pre (diff against the snapshot), marks untouched files `PRE-EXISTING`, and raises `SCOPE-003` as a MEDIUM notice.
+- An unfinished (pre without post) or rejected (`REVISE`) session is refused. `--force` restarts it but keeps its baseline, snapshot, base commit and scope. The restart is listed in both reports, and files covered only by scope added in the restart fail as `SCOPE-004`. Stashing, restarting and popping, or committing mid-task, is still audited, because post diffs against the base commit recorded at the first pre.
+- Paths come from `git status --porcelain -z`, so renamed files and names with spaces or Vietnamese characters are tracked correctly. Globs are accepted only via `--scope`: prose such as "do not edit *.css" never widens scope.
+
+#### Project invariants (`guard.invariants.json`)
+Commit a `guard.invariants.json` at the repository root to replace the generic domain templates:
+```json
+{"invariants": [
+  {"id": "CHAT-01", "description": "Chat requests never time out",
+   "checks": [{"files": "src/ai/**/*.ts", "forbid": "AbortSignal\\.timeout"}]},
+  {"id": "UX-01", "description": "Message renders within 1ms"}
+]}
+```
+Every check runs on the current file contents. `forbid` fails when any matched file contains the regex, and `require` fails when none of them does. A check whose `files` glob matches nothing also fails, and so does an invalid regex. A malformed `guard.invariants.json` makes `guard pre` stop with the parse error. Invariants without checks are reported as `UNVERIFIED` (manual) and never counted as passed. A check that was already failing when pre ran is reported as `BASELINE_FAILED` (a warning), so an old defect does not block unrelated tasks; a check that starts failing during the task blocks approval.
 
 ### 3. Post-Task Phase (`guard post`)
 Execute after code modifications are complete:
@@ -244,7 +266,13 @@ guard post --focus dead-code
 # Deep focus on KISS, YAGNI & over-engineering:
 guard post --focus simplicity
 ```
-*Output:* Inspects git diff, detects out-of-scope files, scans Alibaba OCR rules and code hygiene, executes automated build/test commands, scores invariant compliance via Laya, and requests **Final Gate Approval from your configured LLM** (`APPROVED` or `REVISE`) in `.guard/POST_TASK_REPORT.md`.
+*Output:* Inspects git diff, detects out-of-scope and deleted files, scans Alibaba OCR rules and code hygiene, executes the build command, runs invariant checks, and requests **Final Gate Approval from your configured LLM** (`APPROVED` or `REVISE`) in `.guard/POST_TASK_REPORT.md`.
+
+The report names the gate that actually ran. It says "LLM Gate" only when the LLM answered. Otherwise it says "Heuristic Gate (no LLM review)" and records the failure reason (`llm_error`, `review_mode` in `.guard/session.json`). A review request waits at least 180 s, whatever `llm.timeout` is (that value is sized for `guard config test` pings). Deleting code earns no score bonus.
+
+`SEC-003` (`innerHTML`/`outerHTML` `=` and `+=` sinks) checks every assignment on a line, and a comment that mentions "sanitize" does not silence it. Only an empty literal, a value that is exactly one `DOMPurify.sanitize(...)` call, or an explicit `// guard-allow SEC-003: <reason>` exempts a line, and that marker is still listed as a `LOW` finding.
+
+Git hooks call `guard post --hook`. It skips repositories that have no guard session or whose last session was approved, and it also skips when `guard` is not on `PATH`. With global hooks (`core.hooksPath`), each repository's own hook (and a `.guard.bak` original) in its common `hooks/` directory still runs first, including from linked worktrees. `guard run` and the agent wrapper script accept the same pre-task flags (`--scope`, `--allow-dirty`, `--force`; the wrapper script reads them from `GUARD_PRE_ARGS`).
 
 ### 4. Automated Sandwich Pattern Execution (`guard run`)
 Wraps any developer or agent command in pre- and post-task gates:

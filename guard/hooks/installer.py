@@ -128,8 +128,8 @@ class HookInstaller:
         pre_commit = hooks_dir / "pre-commit"
         prep_msg = hooks_dir / "prepare-commit-msg"
 
-        pre_commit.write_text(GIT_PRE_COMMIT_HOOK, encoding="utf-8")
-        prep_msg.write_text(GIT_PREPARE_COMMIT_MSG_HOOK, encoding="utf-8")
+        pre_commit.write_text(GIT_PRE_COMMIT_HOOK, encoding="utf-8", newline="\n")  # sh scripts must be LF
+        prep_msg.write_text(GIT_PREPARE_COMMIT_MSG_HOOK, encoding="utf-8", newline="\n")
 
         try:
             pre_commit.chmod(pre_commit.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -388,7 +388,7 @@ class HookInstaller:
                 backup_path = target_path.with_suffix(".guard.bak")
                 target_path.rename(backup_path)
 
-        target_path.write_text(script_content, encoding="utf-8")
+        target_path.write_text(script_content, encoding="utf-8", newline="\n")  # sh scripts must be LF
 
         try:
             current_mode = target_path.stat().st_mode

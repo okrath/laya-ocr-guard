@@ -24,6 +24,9 @@ def run_sandwich_task(
     repo_path: Optional[Path] = None,
     auto_fix: bool = False,
     max_fix_attempts: int = 2,
+    scope: Optional[List[str]] = None,
+    allow_dirty: bool = False,
+    force: bool = False,
 ) -> int:
     """
     Executes Pre-task -> Command -> Post-task.
@@ -33,7 +36,9 @@ def run_sandwich_task(
 
     console.print(f"[bold cyan]🛡️  [1/3] EXECUTING PRE-TASK GUARD[/bold cyan]")
     from guard.cli import execute_pre_task
-    pre_success = execute_pre_task(prompt=prompt, repo_path=target_repo)
+    pre_success = execute_pre_task(
+        prompt=prompt, repo_path=target_repo, scope=scope, allow_dirty=allow_dirty, force=force,
+    )
     if not pre_success:
         console.print("[bold red]Pre-Task Guard halted execution due to critical block.[/bold red]")
         return 1

@@ -25,6 +25,10 @@ from guard.core.llm_client import call_llm
 from guard.core.ocr_engine import DiffSummary, RuleViolation
 from guard.core.session import BuildCheckResult, DomainContract, LockedInvariant
 
+REVIEW_MIN_TIMEOUT_S = 180.0
+REVIEW_BATCH_CHARS = 80000
+REVIEW_MAX_BATCHES = 6
+
 
 class ReviewVerdict(str, Enum):
     APPROVED = "APPROVED"
@@ -41,6 +45,7 @@ class LLMReviewVerdict(BaseModel):
     ergonomics_ux: List[str] = Field(default_factory=list)
     remediation_steps: List[str] = Field(default_factory=list)
     review_mode: str = "heuristic"  # "heuristic" or "llm_deep"
+    llm_error: Optional[str] = None  # Why the LLM review did not run or failed
 
 
 class LLMReviewerEngine:
@@ -81,6 +86,7 @@ class LLMReviewerEngine:
             return heuristic_verdict
 
         # 2. Deep LLM Review using the configured LLM (OpenAI, Anthropic, Ollama, DeepSeek, etc.)
+        llm_error: Optional[str] = None
         if use_llm and self.config and self.config.llm and self.config.llm.api_key:
             try:
                 llm_verdict = self._evaluate_with_llm(
@@ -95,9 +101,15 @@ class LLMReviewerEngine:
                 )
                 if llm_verdict:
                     return llm_verdict
-            except Exception:
-                pass
+                llm_error = "LLM response did not follow the SCORE/VERDICT format"
+            except Exception as e:
+                llm_error = f"{type(e).__name__}: {str(e)[:200]}"
+        elif use_llm:
+            llm_error = "No LLM configured (run: guard config llm)"
 
+        if llm_error:
+            heuristic_verdict.llm_error = llm_error
+            heuristic_verdict.summary += f" LLM review did NOT run ({llm_error})."
         return heuristic_verdict
 
     def _evaluate_heuristics(
@@ -159,17 +171,16 @@ class LLMReviewerEngine:
                 tech_notes.append(f"Simplicity Alert [{lv.rule_id}]: {lv.message} ({lv.file_path})")
                 remediation.append(f"Apply KISS/YAGNI to resolve [{lv.rule_id}]: {lv.message} in `{lv.file_path}`")
 
-        # Bonus: Net Negative LOC (Technical Debt Paid Off)
-        if diff_summary and diff_summary.total_deletions > diff_summary.total_insertions and diff_summary.total_deletions >= 10:
+        if diff_summary and diff_summary.total_deletions > diff_summary.total_insertions:
             net_loc = diff_summary.total_insertions - diff_summary.total_deletions
-            score = min(10.0, score + 0.5)
-            tech_notes.append(f"⭐ Code Debt Reduction: Net {net_loc} LOC (Deleting code pays off technical debt).")
+            tech_notes.append(f"Net {net_loc} LOC (informational, not scored).")
 
         # Check 6: Invariants (CRITICAL: Invariant violation is a HARD BLOCKER)
         invariant_violated = False
         if invariant_result:
             if invariant_result.all_passed:
-                ux_notes.append("Invariants Check: 100% Invariants strictly preserved.")
+                verified = len(invariant_result.checks) - invariant_result.unverified_count
+                ux_notes.append(f"Invariants Check: {verified} verified, {invariant_result.unverified_count} unverified (manual).")
             else:
                 invariant_violated = True
                 failed_checks = [c for c in invariant_result.checks if not c.passed]
@@ -192,11 +203,13 @@ class LLMReviewerEngine:
         )
         verdict = ReviewVerdict.APPROVED if (score >= 7.5 and not is_hard_blocked) else ReviewVerdict.REVISE
 
-        summary = (
-            f"LLM GATE APPROVAL: Source code meets safety standards ({score:.1f}/10). No regressions or architectural violations detected."
-            if verdict == ReviewVerdict.APPROVED
-            else f"LLM GATE REJECT: Detected {len(remediation)} issues to fix before handover ({score:.1f}/10)."
-        )
+        unverified = invariant_result.unverified_count if invariant_result else 0
+        if verdict == ReviewVerdict.APPROVED:
+            summary = f"HEURISTIC GATE PASS ({score:.1f}/10): build and static rules found no blocking issue."
+            if unverified:
+                summary += f" {unverified} invariant(s) are UNVERIFIED and need manual checking."
+        else:
+            summary = f"HEURISTIC GATE REJECT ({score:.1f}/10): {len(remediation)} issue(s) to fix before handover."
 
         model_name = self.config.llm.model if (self.config and self.config.llm and self.config.llm.api_key) else "Local Rule Engine"
 
@@ -255,8 +268,9 @@ class LLMReviewerEngine:
             f"You are the Senior Lead Architect and Code Reviewer acting as the final safety gate (using model {model_name}).\n"
             f"Review Directive: {focus_instruction}\n"
             "Your task is to audit the post-task verification report and git diff produced by an AI coding agent.\n"
-            "Note: The automated test suite has already compiled and executed successfully with zero failures.\n"
-            "If the task is refactoring or dead code removal and tests pass without breaking invariants, approve with confidence.\n"
+            "Only the facts in the report are verified: the build status is exactly as stated, and no behavioral test suite has run unless stated.\n"
+            "A passing build does NOT prove behavior is preserved. Invariants marked UNVERIFIED must be judged from the diff itself.\n"
+            "Deleted files and large deletions must be justified by the task prompt; REVISE when the diff removes behavior the task did not ask to remove.\n"
             "Evaluate across 3 pillars:\n"
             "1. Technical Audit (Code integrity, memory leaks, dangling listeners, breaking API changes, security vulnerabilities)\n"
             "2. Invariants & Contracts (Ensure baseline UI states, interactions, and DB schemas are preserved)\n"
@@ -272,52 +286,95 @@ class LLMReviewerEngine:
 
         files_summary = ", ".join(f"{f.path} ({f.status})" for f in (diff_summary.files if diff_summary else []))
         build_info = f"PASSED ({build_check.command} exit 0)" if (build_check and build_check.passed) else ("FAILED" if build_check else "NOT RUN")
+        violations_info = "\n".join(f"- [{v.severity}] {v.rule_id} {v.file_path}: {v.message}" for v in violations[:30])
+        invariants_info = "\n".join(
+            f"- [{c.status.upper()}] {c.id}: {c.description} ({c.notes})" for c in (invariant_result.checks if invariant_result else [])
+        ) or "- none declared"
 
-        user_content = f"""
+        header = f"""
 Domain: {domain_str}
 Review Focus: {focus.upper()}
 Task Prompt: {prompt}
 Build Status: {build_info}
 Rule Violations: {len(violations)} issues
+{violations_info}
 Out of Scope Files: {diff_summary.out_of_scope_files if diff_summary else []}
 All Touched Files: {files_summary}
+Invariants:
+{invariants_info}
+"""
 
-Git Diff:
-```
-{self._prepare_diff_for_review(diff_summary)}
-```
-        """
+        # llm.timeout is tuned for `guard config test` pings; a full diff review needs far longer
+        review_cfg = self.config.llm.model_copy(update={"timeout": max(self.config.llm.timeout, REVIEW_MIN_TIMEOUT_S)})
 
-        raw_response = call_llm(
-            cfg=self.config.llm,
-            prompt=user_content,
-            system_prompt=system_prompt,
-            temperature=0.1,
-            max_tokens=1000,
+        # A large diff is reviewed in parts instead of being truncated, so no change goes unreviewed.
+        batches = self._prepare_diff_batches(diff_summary)
+        verdicts: List[LLMReviewVerdict] = []
+        for i, batch in enumerate(batches, start=1):
+            part = f"Diff part {i}/{len(batches)} (other parts are reviewed separately; judge only this part):\n" if len(batches) > 1 else ""
+            raw_response = call_llm(
+                cfg=review_cfg,
+                prompt=f"{header}\n{part}Git Diff:\n```\n{batch}\n```\n",
+                system_prompt=system_prompt,
+                temperature=0.1,
+                max_tokens=1000,
+            )
+            verdict = self._parse_llm_response(raw_response, model_name=model_name, focus=focus)
+            if verdict is None:
+                return None
+            verdicts.append(verdict)
+        return self._merge_verdicts(verdicts)
+
+    @staticmethod
+    def _merge_verdicts(verdicts: List[LLMReviewVerdict]) -> LLMReviewVerdict:
+        """One REVISE part rejects the whole diff; the score is the weakest part's score."""
+        if len(verdicts) == 1:
+            return verdicts[0]
+        first = verdicts[0]
+        rejected = any(v.verdict == ReviewVerdict.REVISE for v in verdicts)
+        return LLMReviewVerdict(
+            verdict=ReviewVerdict.REVISE if rejected else ReviewVerdict.APPROVED,
+            score=min(v.score for v in verdicts),
+            summary=" ".join(f"[Part {i}/{len(verdicts)}: {v.verdict.value} {v.score:.1f}] {v.summary}" for i, v in enumerate(verdicts, 1)),
+            reviewer_model=first.reviewer_model,
+            focus_area=first.focus_area,
+            technical_audit=[t for v in verdicts for t in v.technical_audit],
+            ergonomics_ux=[t for v in verdicts for t in v.ergonomics_ux],
+            remediation_steps=[t for v in verdicts for t in v.remediation_steps],
+            review_mode="llm_deep",
         )
 
-        return self._parse_llm_response(raw_response, model_name=model_name, focus=focus)
 
-
-    def _prepare_diff_for_review(self, diff_summary: Optional[DiffSummary]) -> str:
+    def _prepare_diff_batches(self, diff_summary: Optional[DiffSummary]) -> List[str]:
+        """Code diff split on file boundaries into parts of at most REVIEW_BATCH_CHARS characters."""
         if not diff_summary or not diff_summary.raw_diff:
-            return 'No diff'
-        raw = diff_summary.raw_diff
+            return ["No diff"]
         # Filter out asset files, binary/data files, and large non-code JSON tables
-        chunks = raw.split('diff --git ')
         code_chunks = []
-        for c in chunks:
+        for c in diff_summary.raw_diff.split("diff --git "):
             if not c.strip():
                 continue
             first_line = c.splitlines()[0] if c.splitlines() else ""
-            if any(k in first_line for k in ["assets/", ".lock", ".svg", ".png", ".onnx", "tokenizer.json"]):
+            if any(k in first_line for k in ["assets/", ".lock", "-lock.", ".svg", ".png", ".onnx", "tokenizer.json"]):
                 continue
-            code_chunks.append(c)
-        if code_chunks:
-            raw = 'diff --git ' + 'diff --git '.join(code_chunks)
-        if len(raw) <= 80000:
-            return raw
-        return raw[:80000]
+            chunk = "diff --git " + c
+            # A single oversized file is split too, never cut off
+            for k in range(0, len(chunk), REVIEW_BATCH_CHARS):
+                code_chunks.append(chunk[k:k + REVIEW_BATCH_CHARS])
+        if not code_chunks:
+            return ["No code diff (only lockfiles/assets changed)"]
+        batches, current = [], ""
+        for chunk in code_chunks:
+            if current and len(current) + len(chunk) > REVIEW_BATCH_CHARS:
+                batches.append(current)
+                current = ""
+            current += chunk
+        batches.append(current)
+        return batches[:REVIEW_MAX_BATCHES] + (
+            [f"[{len(batches) - REVIEW_MAX_BATCHES} more diff parts were NOT reviewed (limit {REVIEW_MAX_BATCHES}); treat them as unreviewed]"]
+            if len(batches) > REVIEW_MAX_BATCHES else []
+        )
+
     def _parse_llm_response(self, text: str, model_name: str = "LLM", focus: str = "all") -> Optional[LLMReviewVerdict]:
         try:
             score_match = re.search(r"SCORE:\s*([\d\.]+)", text)

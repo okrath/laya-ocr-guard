@@ -29,6 +29,7 @@ DEFAULT_ENTRYPOINT_PATTERNS = [
     r"^CHANGELOG(\..+)?$",
     r"^\.gitignore$",
     r"^\.env(\..+)?$",
+    r"^guard\.invariants\.json$",  # Read by guard itself, never imported by project code
     r"^pyproject\.toml$",
     r"^setup\.(py|cfg)$",
     r"^package(\-lock)?\.json$",

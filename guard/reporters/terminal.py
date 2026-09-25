@@ -13,6 +13,7 @@ from rich.table import Table
 from rich.text import Text
 
 from guard.core.session import PostTaskRecord, PreTaskRecord
+from guard.reporters.markdown import gate_label
 
 console = Console()
 
@@ -54,27 +55,43 @@ def render_pre_task_terminal(pre: PreTaskRecord):
         inv_table.add_column("Rationale", style="dim")
 
         for inv in pre.locked_invariants:
-            inv_table.add_row(inv.id, inv.description, inv.rationale)
+            status = pre.baseline_invariant_status.get(inv.id) or ("manual" if not inv.checks else "")
+            inv_table.add_row(inv.id, inv.description, f"{inv.rationale} [{inv.source}{', ' + status if status else ''}]")
         console.print(inv_table)
+        if all(inv.source == "template" for inv in pre.locked_invariants):
+            console.print("[yellow]⚠️ Generic domain templates: add guard.invariants.json to lock this project's real invariants.[/yellow]")
+
+    for r in pre.restarts:
+        console.print(f"[bold yellow]⚠️ Restarted over session {r.get('session_id')} ({r.get('status')}); baseline and scope inherited.[/bold yellow]")
+    if pre.late_scope:
+        console.print(f"[bold yellow]⚠️ Scope added by restart (SCOPE-004 if touched): {', '.join(pre.late_scope)}[/bold yellow]")
+
+    if pre.baseline_dirty:
+        console.print(f"[bold yellow]⚠️ Started with {len(pre.baseline_dirty)} pre-existing modified file(s); they will be reported, not vouched for.[/bold yellow]")
 
     # Target Files
     if pre.expected_files:
         files_str = "\n".join(f"  • [green]{f}[/green]" for f in pre.expected_files)
         console.print(Panel(files_str, title="📁 Expected Impact Range (Target Files)", border_style="green"))
+    else:
+        console.print("[yellow]⚠️ No scope declared (name files in the prompt or pass --scope); scope will not be audited.[/yellow]")
 
 
 def render_post_task_terminal(post: PostTaskRecord, pre: Optional[PreTaskRecord] = None):
     # Overall Verdict Badge (from the configured LLM / Gatekeeper)
     is_approved = post.muse_verdict == "APPROVED"
     badge_style = "bold white on green" if is_approved else "bold white on red"
-    badge_title = "✅ FINAL LLM GATE: APPROVED" if is_approved else "❌ FINAL LLM GATE: REVISE REQUIRED"
+    label = gate_label(post).upper()
+    badge_title = f"✅ FINAL {label}: APPROVED" if is_approved else f"❌ FINAL {label}: REVISE REQUIRED"
 
     summary_text = Text()
     summary_text.append(f"{badge_title}\n\n", style=badge_style)
-    summary_text.append(f"LLM Quality Score: ", style="bold")
+    summary_text.append("Score: ", style="bold")
     summary_text.append(f"{post.muse_score:.1f} / 10.0\n", style="bold yellow" if is_approved else "bold red")
     if post.muse_notes:
-        summary_text.append(f"LLM Assessment: {post.muse_notes}\n", style="italic")
+        summary_text.append(f"Assessment: {post.muse_notes}\n", style="italic")
+    if post.llm_error:
+        summary_text.append(f"LLM review did not run: {post.llm_error}\n", style="bold yellow")
 
     console.print(Panel(summary_text, border_style="green" if is_approved else "red"))
 
@@ -88,8 +105,14 @@ def render_post_task_terminal(post: PostTaskRecord, pre: Optional[PreTaskRecord]
         diff_table.add_column("Scope Audit", justify="center")
 
         for f in post.diff_summary.files:
-            is_oos = f.path in post.out_of_scope_files
-            scope_badge = Text("⚠️ OUT OF SCOPE", style="bold red") if is_oos else Text("✅ In Scope", style="green")
+            if f.preexisting:
+                scope_badge = Text("⏸️ Pre-existing", style="yellow")
+            elif f.path in post.out_of_scope_files:
+                scope_badge = Text("⚠️ OUT OF SCOPE", style="bold red")
+            elif not post.scope_declared:
+                scope_badge = Text("❔ Not declared", style="yellow")
+            else:
+                scope_badge = Text("✅ In Scope", style="green")
             diff_table.add_row(f.path, f.status, str(f.insertions), str(f.deletions), scope_badge)
         console.print(diff_table)
 
@@ -104,14 +127,18 @@ def render_post_task_terminal(post: PostTaskRecord, pre: Optional[PreTaskRecord]
 
     # Invariants Verification
     if post.invariant_result:
-        inv_table = Table(title="🧪 Invariant Compliance Verification (Laya System 1)", show_header=True)
+        inv_table = Table(title="🧪 Invariant Verification (deterministic checks)", show_header=True)
         inv_table.add_column("ID", width=12)
         inv_table.add_column("Description")
         inv_table.add_column("Verdict", justify="center", width=12)
         inv_table.add_column("Notes", style="dim")
 
         for c in post.invariant_result.checks:
-            v_text = Text("✅ PASSED", style="bold green") if c.passed else Text("❌ VIOLATED", style="bold red")
+            v_text = {
+                "passed": Text("✅ PASSED", style="bold green"),
+                "failed": Text("❌ VIOLATED", style="bold red"),
+                "baseline_failed": Text("⚠️ WAS FAILING", style="yellow"),
+            }.get(c.status, Text("⚪ UNVERIFIED", style="yellow"))
             inv_table.add_row(c.id, c.description, v_text, c.notes)
         console.print(inv_table)
 
@@ -157,12 +184,6 @@ def render_post_task_terminal(post: PostTaskRecord, pre: Optional[PreTaskRecord]
                 simplicity_table.add_row(v.rule_id, v.severity, loc, v.message)
             console.print(simplicity_table)
 
-    # Net Negative LOC Recognition
-    if post.diff_summary and post.diff_summary.total_deletions > post.diff_summary.total_insertions and post.diff_summary.total_deletions >= 10:
+    if post.diff_summary:
         net = post.diff_summary.total_insertions - post.diff_summary.total_deletions
-        console.print(Panel(
-            f"[bold green]⭐ NET NEGATIVE CODE CHANGE ({net:+d} LOC)[/bold green]\n"
-            f"[dim]The best code is code you never write. Technical debt paid off successfully![/dim]",
-            title="🛋️ Engineering Frugality Bonus",
-            border_style="green",
-        ))
+        console.print(f"[dim]Net change: {net:+d} LOC (informational, not scored).[/dim]")

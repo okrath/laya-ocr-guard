@@ -14,7 +14,7 @@ import time
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -41,6 +41,8 @@ class LockedInvariant(BaseModel):
     id: str  # e.g., "INV-01"
     description: str
     rationale: str = ""
+    source: str = "template"  # "project" (guard.invariants.json) or "template" (generic domain sample)
+    checks: List[dict] = Field(default_factory=list)  # [{"files": glob, "forbid"|"require": regex}]
 
 
 class PreTaskRecord(BaseModel):
@@ -55,6 +57,15 @@ class PreTaskRecord(BaseModel):
     existing_contracts: List[DomainContract] = Field(default_factory=list)
     locked_invariants: List[LockedInvariant] = Field(default_factory=list)
     non_regression_strategy: str = ""
+    triage_domain: Optional[str] = None  # Prompt-based guess, informational only
+    # Files already dirty when pre ran: path -> content sha1 ("<deleted>" if missing)
+    baseline_dirty: Dict[str, str] = Field(default_factory=dict)
+    baseline_invariant_status: Dict[str, str] = Field(default_factory=dict)
+    base_ref: Optional[str] = None  # HEAD at the first pre; post diffs against it so mid-task commits stay visible
+    # `git stash create` of the dirty tree at pre (--allow-dirty): diff against it = exactly the task's edits
+    baseline_snapshot: Optional[str] = None
+    late_scope: List[str] = Field(default_factory=list)  # Scope added by a restart after edits began
+    restarts: List[Dict[str, str]] = Field(default_factory=list)  # Superseded sessions: id, status, at
 
 
 class BuildCheckResult(BaseModel):
@@ -77,6 +88,11 @@ class PostTaskRecord(BaseModel):
     muse_verdict: str = "PENDING"  # "APPROVED" or "REVISE"
     muse_score: float = 0.0
     muse_notes: str = ""
+    review_mode: str = "heuristic"  # "llm_deep" only when the configured LLM actually answered
+    llm_error: Optional[str] = None
+    scope_declared: bool = True
+    preexisting_files: List[str] = Field(default_factory=list)
+    deleted_files: List[str] = Field(default_factory=list)
 
 
 class GuardSession(BaseModel):
@@ -138,6 +154,15 @@ class SessionManager:
         base.mkdir(parents=True, exist_ok=True)
         return base / "active_session.json"
 
+    def load_local_session(self) -> Optional[GuardSession]:
+        """Session of this exact repo only (no parent walk-up or global fallback)."""
+        if not self.session_file.is_file():
+            return None
+        try:
+            return GuardSession.model_validate_json(self.session_file.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
     def load_session(self) -> Optional[GuardSession]:
         # 1. Local workspace session
         if self.session_file.is_file():
@@ -193,6 +218,13 @@ class SessionManager:
         contracts: List[DomainContract],
         invariants: List[LockedInvariant],
         non_regression_strategy: str = "",
+        domain: Optional[DomainType] = None,
+        baseline_dirty: Optional[Dict[str, str]] = None,
+        baseline_invariant_status: Optional[Dict[str, str]] = None,
+        base_ref: Optional[str] = None,
+        late_scope: Optional[List[str]] = None,
+        baseline_snapshot: Optional[str] = None,
+        restarts: Optional[List[Dict[str, str]]] = None,
     ) -> GuardSession:
         self.guard_dir.mkdir(parents=True, exist_ok=True)
         self.ensure_gitignore()
@@ -200,7 +232,14 @@ class SessionManager:
         session_id = f"guard-{int(time.time())}"
         pre_rec = PreTaskRecord(
             prompt=prompt,
-            domain=triage.domain,
+            domain=domain or triage.domain,
+            triage_domain=triage.domain.value,
+            baseline_dirty=baseline_dirty or {},
+            baseline_invariant_status=baseline_invariant_status or {},
+            base_ref=base_ref,
+            late_scope=late_scope or [],
+            baseline_snapshot=baseline_snapshot,
+            restarts=restarts or [],
             intent=triage.intent,
             risk_level=triage.risk_level,
             risk_score_label=triage.risk_score_label,

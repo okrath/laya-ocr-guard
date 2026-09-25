@@ -13,11 +13,13 @@ Provides:
 
 from __future__ import annotations
 
+import hashlib
 import re
 import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
@@ -31,9 +33,10 @@ from guard.core.config import get_global_config_path, get_local_config_path, loa
 from guard.core.laya_engine import DomainType, LayaEngine
 from guard.core.hygiene_engine import HygieneEngine
 from guard.core.llm_reviewer import LLMReviewerEngine, ReviewVerdict
-from guard.core.ocr_engine import GitDiffInspector, OCRRulebookRunner
+from guard.core.ocr_engine import GitDiffInspector, OCRRulebookRunner, RuleViolation
+from guard.core.project_invariants import InvariantsFileError
 from guard.core.simplicity_engine import SimplicityEngine
-from guard.core.session import BuildCheckResult, PostTaskRecord, SessionManager
+from guard.core.session import BuildCheckResult, PostTaskRecord, SessionManager, SessionStatus
 from guard.core.updater import (
     UpdateSecurityStatus,
     check_guard_self_update,
@@ -44,6 +47,7 @@ from guard.core.updater import (
     perform_self_upgrade,
 )
 from guard.domains.detector import (
+    analyzer_domain,
     detect_build_command,
     detect_repo_domain,
     extract_contracts_and_invariants,
@@ -86,40 +90,146 @@ def main_callback(
 # Core Task Execution Logic (Callable by CLI & Runner)
 # ---------------------------------------------------------
 
-def execute_pre_task(prompt: str, repo_path: Optional[Path] = None, quick: bool = False) -> bool:
+def _fingerprint(path: Path) -> str:
+    """Content hash used to tell whether a pre-existing dirty file was touched during the task."""
+    if not path.is_file():
+        return "<deleted>"
+    return hashlib.sha1(path.read_bytes()).hexdigest()
+
+
+def _drop_diff_files(raw_diff: str, drop: set) -> str:
+    """Remove the per-file chunks of `drop` paths from a unified diff."""
+    if not drop:
+        return raw_diff
+    chunks = raw_diff.split("diff --git ")
+    kept = [c for c in chunks[1:] if not any(c.startswith(f"a/{p} b/") for p in drop)]
+    return (chunks[0] + "".join("diff --git " + c for c in kept)) if kept else ""
+
+
+def _prompt_paths(prompt: str, repo: Path) -> List[str]:
+    """Paths named in the prompt: existing files/dirs, or new `dir/file.ext` paths to be created."""
+    # Globs are only accepted through --scope: prose like "do not edit *.css" must not widen scope.
+    tokens = re.findall(r"[\w\-\.\/\\\[\]]+\.[a-zA-Z0-9]+|[\w\-\.]+[\/\\][\w\-\.\/\\\[\]]*", prompt)
+    out = []
+    for t in tokens:
+        t = t.replace("\\", "/")
+        if t.startswith("./"):
+            t = t[2:]
+        is_new_file_path = "/" in t and bool(re.search(r"\.[a-zA-Z0-9]+$", t))
+        if t and ((repo / t).exists() or is_new_file_path):
+            out.append(t)
+    return sorted(set(out))
+
+
+def execute_pre_task(
+    prompt: str,
+    repo_path: Optional[Path] = None,
+    quick: bool = False,
+    scope: Optional[List[str]] = None,
+    allow_dirty: bool = False,
+    force: bool = False,
+) -> bool:
     target_repo = Path(repo_path or Path.cwd()).resolve()
     config = load_config(target_repo)
     laya = LayaEngine(model_name=config.laya.model_name, device=config.laya.device)
+    session_mgr = SessionManager(target_repo)
 
-    # 1. Detect Domain & Candidate Files
-    repo_analyzer = detect_repo_domain(target_repo)
+    # 0. A pre-task gate that can be re-run after editing would let scope be declared retroactively.
+    #    An unfinished (AWAITING_POST) or rejected (NEEDS_FIX) session can only be superseded with
+    #    --force, and the new session inherits its baseline, base commit and scope: a restart can
+    #    never turn the task's own edits into "pre-existing" baseline or widen the audited scope.
+    previous = session_mgr.load_local_session()
+    superseded = previous if (
+        previous and previous.pre and previous.status in (SessionStatus.AWAITING_POST, SessionStatus.NEEDS_FIX)
+    ) else None
+    if superseded and not force:
+        state = "unfinished" if superseded.status == SessionStatus.AWAITING_POST else "rejected (REVISE)"
+        console.print(
+            f"[bold red]❌ The previous guard session {superseded.session_id} is {state}.[/bold red]\n"
+            "Finish it with [bold]guard post[/bold]. [bold]guard pre --force[/bold] restarts it, keeping its baseline and scope; "
+            "the restart is recorded and any scope added by it is reported as SCOPE-004."
+        )
+        return False
+
     diff_inspector = GitDiffInspector(target_repo)
+    requested_scope = sorted(
+        {p.replace("\\", "/").rstrip("/") for p in _prompt_paths(prompt, target_repo) + list(scope or [])} - {""}
+    )
+    if superseded:
+        old = superseded.pre
+        baseline_dirty = dict(old.baseline_dirty)
+        base_ref = old.base_ref
+        baseline_snapshot = old.baseline_snapshot  # never re-snapshot: that would absorb the task's edits
+        candidate_files = list(old.expected_files)
+        late_scope = sorted(set(old.late_scope) | (set(requested_scope) - set(old.expected_files)))
+        restarts = old.restarts + [{
+            "session_id": superseded.session_id,
+            "status": superseded.status.value,
+            "at": datetime.now(timezone.utc).isoformat(),
+        }]
+    else:
+        working_files = diff_inspector.get_working_files()
+        if working_files and not allow_dirty:
+            listing = "\n".join(f"  • {f}" for f in working_files[:20])
+            more = f"\n  … and {len(working_files) - 20} more" if len(working_files) > 20 else ""
+            console.print(
+                f"[bold red]❌ Working tree already has {len(working_files)} modified file(s) before the task starts:[/bold red]\n{listing}{more}\n"
+                "Pre-task must run BEFORE editing. Commit or stash them first. Only if they are unrelated work that must stay, "
+                "pass [bold]--allow-dirty[/bold]: they are then reported as pre-existing and never vouched for."
+            )
+            return False
+        baseline_dirty = {f: _fingerprint(target_repo / f) for f in working_files}
+        base_ref = diff_inspector.get_head()
+        baseline_snapshot = diff_inspector.create_baseline_snapshot() if working_files else None
+        candidate_files = requested_scope
+        late_scope = []
+        restarts = []
 
-    # Extract file names mentioned in prompt or touched in working tree
-    prompt_files = re.findall(r"[\w\-\.\/]+\.[a-zA-Z0-9]+", prompt)
-    working_files = diff_inspector.get_working_files()
-    candidate_files = list(set([f for f in (working_files + prompt_files) if not f.startswith(".guard") and f != ".gitignore"]))
+    # 1. Domain comes from the repository itself; the prompt-based triage is only a hint.
+    repo_analyzer = detect_repo_domain(target_repo)
+    domain = analyzer_domain(repo_analyzer)
 
     # 2. Laya System 1 Triage (<30ms)
     triage = laya.triage(prompt=prompt, context_files=candidate_files)
 
     # 3. Domain Contracts & Invariants Extraction
-    contracts, invariants = extract_contracts_and_invariants(
+    try:
+        contracts, invariants = extract_contracts_and_invariants(
+            repo_path=target_repo,
+            prompt=prompt,
+            domain=domain,
+            files=candidate_files,
+        )
+    except InvariantsFileError as e:
+        console.print(f"[bold red]❌ {e}[/bold red]\nFix guard.invariants.json before starting the task.")
+        return False
+    baseline_eval = laya.evaluate_invariants(
+        invariants=[inv.model_dump() for inv in invariants],
+        git_diff="",
+        files_changed=[],
         repo_path=target_repo,
-        prompt=prompt,
-        domain=triage.domain,
-        files=candidate_files,
     )
+    # Only real checks have a meaningful baseline; diff heuristics trivially "pass" on an empty diff
+    checked = {inv.id for inv in invariants if inv.checks}
+    baseline_status = {c.id: c.status for c in baseline_eval.checks if c.id in checked}
+    if superseded:
+        baseline_status = dict(superseded.pre.baseline_invariant_status)
 
     # 4. Save Session
-    session_mgr = SessionManager(target_repo)
     session = session_mgr.start_pre_session(
         prompt=prompt,
         triage=triage,
         expected_files=candidate_files,
         contracts=contracts,
         invariants=invariants,
-        non_regression_strategy=f"Isolate changes to domain {triage.domain.value.upper()}. Maintain 100% existing baseline contracts.",
+        non_regression_strategy=f"Isolate changes to domain {domain.value.upper()}. Maintain 100% existing baseline contracts.",
+        domain=domain,
+        baseline_dirty=baseline_dirty,
+        baseline_invariant_status=baseline_status,
+        base_ref=base_ref,
+        late_scope=late_scope,
+        baseline_snapshot=baseline_snapshot,
+        restarts=restarts,
     )
 
     # 5. Output Terminal & Write Markdown
@@ -135,30 +245,90 @@ def execute_pre_task(prompt: str, repo_path: Optional[Path] = None, quick: bool 
     return True
 
 
-def execute_post_task(repo_path: Optional[Path] = None, auto_fix: bool = False, focus: str = "all") -> bool:
+def execute_post_task(
+    repo_path: Optional[Path] = None,
+    auto_fix: bool = False,
+    focus: str = "all",
+    hook: bool = False,
+) -> bool:
     target_repo = Path(repo_path or Path.cwd()).resolve()
     config = load_config(target_repo)
     session_mgr = SessionManager(target_repo)
-    session = session_mgr.load_session()
+    # In a git hook only this repo's own session counts; never adopt another repo's session.
+    session = session_mgr.load_local_session() if hook else session_mgr.load_session()
+    if hook and (session is None or session.status == SessionStatus.COMPLETED):
+        reason = "no guard session in this repository" if session is None else "last guard session was approved"
+        console.print(f"[dim]Laya-OCR-Guard: {reason}, skipping.[/dim]")
+        return True
 
-    expected_files = session.pre.expected_files if session and session.pre else []
-    invariants_dicts = [inv.model_dump() for inv in (session.pre.locked_invariants if session and session.pre else [])]
+    pre = session.pre if session else None
+    expected_files = pre.expected_files if pre else []
+    scope_declared = bool(expected_files)
+    baseline_dirty = pre.baseline_dirty if pre else {}
+    invariants_dicts = [inv.model_dump() for inv in (pre.locked_invariants if pre else [])]
 
-    # 1. OCR Diff & Blast Radius Audit
+    # 1. OCR Diff & Blast Radius Audit (no declared scope -> no scope verdict, instead of flagging every file)
     diff_inspector = GitDiffInspector(target_repo)
-    raw_diff = diff_inspector.get_diff() or ""
-    diff_summary = diff_inspector.parse_diff(raw_diff, expected_files=expected_files)
+    # Diff against the commit recorded at pre, so commits made mid-task are still audited
+    raw_diff = diff_inspector.get_diff(base_ref=pre.base_ref if pre else None) or ""
+    diff_summary = diff_inspector.parse_diff(raw_diff, expected_files=expected_files if scope_declared else None)
+
+    # Files dirty before pre-task and untouched since are not attributed to this task.
+    for f in diff_summary.files:
+        if f.path in baseline_dirty and baseline_dirty[f.path] == _fingerprint(target_repo / f.path):
+            f.preexisting = True
+            f.is_out_of_scope = False
+    diff_summary.out_of_scope_files = [f.path for f in diff_summary.files if f.is_out_of_scope]
+    preexisting_files = [f.path for f in diff_summary.files if f.preexisting]
+    deleted_files = [f.path for f in diff_summary.files if f.status == "deleted" and not f.preexisting]
+
+    # With a baseline snapshot, rules and the LLM see exactly the task's own edits; pre-existing
+    # changes stay listed (and scope-audited) but are not reviewed as if the task wrote them.
+    task_diff = raw_diff
+    snapshot = pre.baseline_snapshot if pre else None
+    if snapshot:
+        task_diff = _drop_diff_files(diff_inspector.get_diff(base_ref=snapshot) or "", set(preexisting_files))
+    task_summary = diff_inspector.parse_diff(task_diff)
 
     # 2. OCR Rulebook & Code Hygiene scan (Two-tier: diff-level vs full-file focus)
     rulebook = OCRRulebookRunner()
-    violations = rulebook.scan_diff(raw_diff)
+    violations = rulebook.scan_diff(task_diff)
+
+    late_scope = pre.late_scope if pre else []
+    for f in diff_summary.out_of_scope_files:
+        if late_scope and diff_inspector._is_expected(f, late_scope):
+            violations.append(RuleViolation(
+                rule_id="SCOPE-004",
+                severity="HIGH",
+                file_path=f,
+                message="Scope for this file was only declared by a `guard pre --force` restart after edits began.",
+            ))
+    for d in deleted_files:
+        violations.append(RuleViolation(
+            rule_id="SCOPE-002",
+            severity="MEDIUM",
+            file_path=d,
+            message="File deleted. Confirm the task explicitly asked for this removal.",
+        ))
+    if baseline_dirty:
+        attributable = bool(snapshot)
+        violations.append(RuleViolation(
+            rule_id="SCOPE-003",
+            severity="MEDIUM" if attributable else "HIGH",
+            file_path=", ".join(sorted(baseline_dirty)[:10]) + (" …" if len(baseline_dirty) > 10 else ""),
+            message=(
+                f"{len(baseline_dirty)} file(s) were already modified before pre-task (--allow-dirty). "
+                + ("Review covers only edits made after pre-task (diff vs baseline snapshot); the pre-existing changes are not vouched for."
+                   if attributable else "Guard cannot attribute or vouch for those changes.")
+            ),
+        ))
 
     hygiene = HygieneEngine(target_repo)
     if (focus or "").lower() in ("dead-code", "hygiene"):
         touched = [f.path for f in diff_summary.files]
         hygiene_violations = hygiene.scan_focus_level(touched)
     else:
-        hygiene_violations = hygiene.scan_diff_level(raw_diff, diff_summary)
+        hygiene_violations = hygiene.scan_diff_level(task_diff, task_summary)
     violations.extend(hygiene_violations)
 
     simplicity = SimplicityEngine(target_repo)
@@ -166,7 +336,7 @@ def execute_post_task(repo_path: Optional[Path] = None, auto_fix: bool = False, 
         touched = [f.path for f in diff_summary.files]
         simplicity_violations = simplicity.scan_focus_level(touched)
     else:
-        simplicity_violations = simplicity.scan_diff_level(raw_diff, diff_summary)
+        simplicity_violations = simplicity.scan_diff_level(task_diff, task_summary)
     violations.extend(simplicity_violations)
     # 3. Deterministic Build Check (0 token)
     build_cmd = detect_build_command(target_repo)
@@ -204,28 +374,37 @@ def execute_post_task(repo_path: Optional[Path] = None, auto_fix: bool = False, 
                 duration_s=duration,
             )
 
-    # 4. Laya Invariants Scoring
+    # 4. Invariants: project checks run on current files; template invariants only get diff heuristics
     laya = LayaEngine(model_name=config.laya.model_name, device=config.laya.device)
     inv_eval = laya.evaluate_invariants(
         invariants=invariants_dicts,
-        git_diff=raw_diff,
+        git_diff=task_diff,
         files_changed=[f.path for f in diff_summary.files],
+        repo_path=target_repo,
     )
+    baseline_status = pre.baseline_invariant_status if pre else {}
+    for c in inv_eval.checks:
+        if c.status == "failed" and baseline_status.get(c.id) == "failed":
+            # Not a regression caused by this task: warn, do not block
+            c.status = "baseline_failed"
+            c.passed = True
+            c.notes += " (already failing before this task)"
+    inv_eval.all_passed = not any(c.status == "failed" for c in inv_eval.checks)
 
     # 5. LLM Final Gatekeeper Review (Calling the user-configured LLM)
     reviewer = LLMReviewerEngine(config=config)
-    domain = session.pre.domain if session and session.pre else DomainType.BACKEND
-    prompt = session.pre.prompt if session and session.pre else "Post-task verification"
+    domain = pre.domain if pre else DomainType.BACKEND
+    prompt = pre.prompt if pre else "Post-task verification"
 
     review_verdict = reviewer.review(
         prompt=prompt,
         domain=domain,
-        diff_summary=diff_summary,
+        diff_summary=diff_summary.model_copy(update={"raw_diff": task_diff}),
         build_check=build_res,
         violations=violations,
         invariant_result=inv_eval,
-        contracts=session.pre.existing_contracts if session and session.pre else None,
-        use_llm=bool(config.llm and config.llm.api_key),
+        contracts=pre.existing_contracts if pre else None,
+        use_llm=True,
         focus=focus,
     )
 
@@ -243,13 +422,18 @@ def execute_post_task(repo_path: Optional[Path] = None, auto_fix: bool = False, 
         muse_verdict=review_verdict.verdict.value,
         muse_score=review_verdict.score,
         muse_notes=review_verdict.summary,
+        review_mode=review_verdict.review_mode,
+        llm_error=review_verdict.llm_error,
+        scope_declared=scope_declared,
+        preexisting_files=preexisting_files,
+        deleted_files=deleted_files,
     )
 
     session_mgr.complete_post_session(post_rec)
 
     # 7. Render Terminal & Markdown
-    render_post_task_terminal(post_rec, session.pre if session else None)
-    md_content = generate_post_task_markdown(post_rec, session.pre if session else None)
+    render_post_task_terminal(post_rec, pre)
+    md_content = generate_post_task_markdown(post_rec, pre)
     post_report_path = target_repo / ".guard" / "POST_TASK_REPORT.md"
     try:
         post_report_path.write_text(md_content, encoding="utf-8")
@@ -260,7 +444,7 @@ def execute_post_task(repo_path: Optional[Path] = None, auto_fix: bool = False, 
     if not all_passed and review_verdict.remediation_steps:
         console.print(Panel(
             "\n".join(f"  [bold red]•[/bold red] {s}" for s in review_verdict.remediation_steps),
-            title="🔧 Actionable Remediation Checklist (LLM Directives)",
+            title="🔧 Actionable Remediation Checklist",
             border_style="red",
         ))
 
@@ -276,11 +460,21 @@ def pre_cmd(
     prompt: str = typer.Argument(..., help="Prompt or task about to be executed by developer/agent"),
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
     quick: bool = typer.Option(False, "--quick", "-q", help="Quick mode (local triage only)"),
+    scope: Optional[List[str]] = typer.Option(None, "--scope", "-s", help="Allowed file/dir/glob (repeatable), e.g. --scope 'src/ui/**'"),
+    allow_dirty: bool = typer.Option(False, "--allow-dirty", help="Start even though files are already modified (recorded as pre-existing baseline)"),
+    force: bool = typer.Option(False, "--force", help="Restart an unfinished or rejected session (inherits its baseline and scope)"),
 ):
     """
-    Run Pre-Task Guard: fast triage, risk scoring, baseline contracts & invariants.
+    Run Pre-Task Guard BEFORE editing: triage, scope declaration, baseline contracts & invariants.
     """
-    success = execute_pre_task(prompt=prompt, repo_path=Path(repo) if repo else None, quick=quick)
+    success = execute_pre_task(
+        prompt=prompt,
+        repo_path=Path(repo) if repo else None,
+        quick=quick,
+        scope=scope,
+        allow_dirty=allow_dirty,
+        force=force,
+    )
     if not success:
         raise typer.Exit(code=1)
 
@@ -290,11 +484,12 @@ def post_cmd(
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
     auto_fix: bool = typer.Option(False, "--auto-fix", help="Trigger self-healing suggestions"),
     focus: str = typer.Option("all", "--focus", "-f", help="Quality pillar focus: 'all', 'security', 'memory', 'performance', 'ux', 'dead-code', 'simplicity'"),
+    hook: bool = typer.Option(False, "--hook", help="Git-hook mode: skip when this repository has no guard session"),
 ):
     """
-    Run Post-Task Guard: diff audit, build checks, invariant scoring & LLM final verification.
+    Run Post-Task Guard: diff audit, build checks, invariant checks & LLM final verification.
     """
-    passed = execute_post_task(repo_path=Path(repo) if repo else None, auto_fix=auto_fix, focus=focus)
+    passed = execute_post_task(repo_path=Path(repo) if repo else None, auto_fix=auto_fix, focus=focus, hook=hook)
     if not passed:
         raise typer.Exit(code=1)
 
@@ -305,6 +500,9 @@ def run_cmd(
     command: List[str] = typer.Argument(..., help="Command to run after pre-task (e.g. -- git status)"),
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
     auto_fix: bool = typer.Option(False, "--auto-fix", help="Auto-fix loop"),
+    scope: Optional[List[str]] = typer.Option(None, "--scope", "-s", help="Allowed file/dir/glob (repeatable)"),
+    allow_dirty: bool = typer.Option(False, "--allow-dirty", help="Start even though files are already modified"),
+    force: bool = typer.Option(False, "--force", help="Restart an unfinished or rejected session (inherits its baseline and scope)"),
 ):
     """
     Execute Sandwich Pattern: `guard pre` -> `agent-command` -> `guard post`.
@@ -315,6 +513,9 @@ def run_cmd(
         command=command,
         repo_path=Path(repo) if repo else None,
         auto_fix=auto_fix,
+        scope=scope,
+        allow_dirty=allow_dirty,
+        force=force,
     )
     if code != 0:
         raise typer.Exit(code=code)
@@ -674,15 +875,8 @@ def review_cmd(
     else:
         simplicity_violations = simplicity.scan_diff_level(raw_diff, summary)
     violations.extend(simplicity_violations)
-    reviewer = LLMReviewerEngine(config=cfg)
-    analyzer = detect_repo_domain(target_repo)
-    domain_map = {
-        "Frontend (Web UI/UX)": DomainType.FRONTEND,
-        "Backend (API & Database Services)": DomainType.BACKEND,
-        "Infrastructure & DevOps (IaC / Containers / CI-CD)": DomainType.INFRA,
-        "Mobile App (Flutter / React Native / iOS / Android)": DomainType.MOBILE,
-    }
-    dom_type = domain_map.get(analyzer.name, DomainType.BACKEND)
+    reviewer = LLMReviewerEngine(config=load_config(target_repo))
+    dom_type = analyzer_domain(detect_repo_domain(target_repo))
 
     verdict = reviewer.review(
         prompt="Manual review requested",
@@ -695,8 +889,8 @@ def review_cmd(
     badge_color = "green" if verdict.verdict == ReviewVerdict.APPROVED else "red"
     focus_label = f" | Focus: {verdict.focus_area.upper()}" if verdict.focus_area != "all" else ""
     console.print(Panel(
-        f"[bold]{verdict.verdict.value}[/bold] (Model: {verdict.reviewer_model}{focus_label}, Score: {verdict.score:.1f}/10)\n{verdict.summary}",
-        title="🤖 LLM Code Review & Approval",
+        f"[bold]{verdict.verdict.value}[/bold] (Mode: {verdict.review_mode}, Model: {verdict.reviewer_model}{focus_label}, Score: {verdict.score:.1f}/10)\n{verdict.summary}",
+        title="🤖 LLM Code Review & Approval" if verdict.review_mode == "llm_deep" else "⚙️ Heuristic Review (LLM did not answer)",
         border_style=badge_color,
     ))
 
@@ -1000,7 +1194,18 @@ def laya_triage_cmd(
 
     console.print(table)
 
+def _force_utf8_console():
+    """Git hooks and legacy Windows consoles default to cp1252; emoji output would crash the run."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if stream and (stream.encoding or "").lower().replace("-", "") != "utf8":
+                stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 def main():
+    _force_utf8_console()
     maybe_trigger_background_update_check()
     try:
         app()

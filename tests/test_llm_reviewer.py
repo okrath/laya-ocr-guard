@@ -153,7 +153,7 @@ def test_reviewer_reject_on_dead_code_focus(reviewer):
     assert focus_verdict.focus_area == "dead-code"
     assert any("DEAD-001" in step for step in focus_verdict.remediation_steps)
 def test_reviewer_simplicity_focus_and_net_loc(reviewer):
-    # 1. Net negative LOC awards bonus
+    # 1. Net negative LOC is reported but never scored (deleting code is not evidence of quality)
     diff_reduced = DiffSummary(
         total_insertions=5,
         total_deletions=50,
@@ -168,7 +168,9 @@ def test_reviewer_simplicity_focus_and_net_loc(reviewer):
         focus="all",
     )
     assert verdict_clean.verdict == ReviewVerdict.APPROVED
-    assert any("Code Debt Reduction" in note for note in verdict_clean.technical_audit)
+    assert any("Net -45 LOC (informational, not scored)" in note for note in verdict_clean.technical_audit)
+    assert verdict_clean.score == 10.0
+    assert verdict_clean.review_mode == "heuristic"
 
     # 2. In simplicity focus mode, LAZY-001 is a hard blocker
     violations = [
