@@ -256,7 +256,7 @@ class HookInstaller:
         """
         Install hooks and/or agent directives into repository.
         mode:
-          - 'git' (or 'stealth'): Local Git hooks only. Zero workspace files (no CLAUDE.md/AGENT.md).
+          - 'git' (or 'stealth'): Local Git hooks only. No CLAUDE.md/AGENT.md (guard.invariants.json is still created).
           - 'agent': Workspace agent directives only (CLAUDE.md & AGENT.md). No Git hooks.
           - 'all' (or 'dual'): Both Git hooks and Agent directives.
         """
@@ -305,6 +305,14 @@ class HookInstaller:
             # Inject or create AGENT.md
             self._inject_directive(self.agent_md_path)
             messages.append(f"Configured Agent directives in {self.agent_md_path.name}")
+
+        # 3. Project invariants file: every guarded repository gets one (never overwritten)
+        from guard.core.project_invariants import init_invariants_file
+        inv_path, created, imported = init_invariants_file(self.repo_path)
+        if created:
+            messages.append(f"Created {inv_path.name} ({imported} invariant(s) imported from agent docs)")
+        else:
+            messages.append(f"Kept existing {inv_path.name}")
 
         return True, messages
 

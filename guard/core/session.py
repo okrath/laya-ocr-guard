@@ -95,6 +95,8 @@ class PostTaskRecord(BaseModel):
     deleted_files: List[str] = Field(default_factory=list)
     # Content fingerprints of every changed file when APPROVED: the approval covers exactly these
     approved_fingerprints: Dict[str, str] = Field(default_factory=dict)
+    learned_invariants: List[str] = Field(default_factory=list)  # ids the LLM added to guard.invariants.json
+    rejected_invariant_proposals: List[str] = Field(default_factory=list)
 
 
 class GuardSession(BaseModel):

@@ -30,6 +30,28 @@ REVIEW_BATCH_CHARS = 80000
 REVIEW_MAX_BATCHES = 6
 
 
+def _parse_invariant_proposals(text: str) -> List[dict]:
+    """`INVARIANTS:` lines -> [{"id", "description", "checks"}]; malformed lines are dropped."""
+    m = re.search(r"INVARIANTS:\s*(.+?)(?=\n[A-Z]+:|\Z)", text, re.DOTALL)
+    if not m:
+        return []
+    out = []
+    for line in m.group(1).strip().splitlines():
+        line = re.sub(r"^[\s*\-\d.)]+", "", line).strip().strip("`")
+        if not line or line.lower() == "none":
+            continue
+        parts = [x.strip().strip("`") for x in line.split(" | ")]
+        if len(parts) == 2:
+            out.append({"id": parts[0], "description": parts[1], "checks": []})
+        elif len(parts) >= 5 and parts[3].lower() in ("forbid", "require"):
+            regex = " | ".join(parts[4:])
+            # Models often markdown-escape paths (`project\_invariants.py`); a glob never needs that
+            files = re.sub(r"\\([_*\[\]])", r"\1", parts[2])
+            out.append({"id": parts[0], "description": parts[1],
+                        "checks": [{"files": files, parts[3].lower(): regex}]})
+    return out
+
+
 def _resolved_script(output: str) -> Optional[str]:
     """Script line echoed by pnpm/yarn (`$ tsc && vite build`) or npm (`> tsc && vite build`)."""
     for line in (output or "").splitlines():
@@ -53,6 +75,8 @@ class LLMReviewVerdict(BaseModel):
     technical_audit: List[str] = Field(default_factory=list)
     ergonomics_ux: List[str] = Field(default_factory=list)
     remediation_steps: List[str] = Field(default_factory=list)
+    # Durable project rules the reviewer found, for guard.invariants.json (validated before writing)
+    proposed_invariants: List[dict] = Field(default_factory=list)
     review_mode: str = "heuristic"  # "heuristic" or "llm_deep"
     llm_error: Optional[str] = None  # Why the LLM review did not run or failed
 
@@ -293,7 +317,14 @@ class LLMReviewerEngine:
             "SUMMARY: <concise summary>\n"
             "TECHNICAL: <bullet points>\n"
             "ERGONOMICS: <bullet points>\n"
-            "REMEDIATION: <bullet points of required fixes if REVISE, or 'None' if APPROVED>"
+            "REMEDIATION: <bullet points of required fixes if REVISE, or 'None' if APPROVED>\n"
+            "INVARIANTS: <'None', or one line per DURABLE project rule this diff reveals that is not already in the "
+            "Invariants list above and that the current code satisfies. Format: "
+            "`- ID | description | files-glob | forbid-or-require | python-regex` for a machine check, or "
+            "`- ID | description` for a rule that cannot be checked by regex. ID: UPPERCASE letters/digits/dashes. "
+            "Write each description in the same language as the existing invariant descriptions listed above "
+            "(English when there are none), and wrap file paths in backticks. "
+            "Propose only rules the project must keep in every future change, not task-specific notes.>"
         )
 
         files_summary = ", ".join(f"{f.path} ({f.status})" for f in (diff_summary.files if diff_summary else []))
@@ -360,6 +391,7 @@ Verified evidence (computed by guard over the whole repository, valid for every 
             technical_audit=[t for v in verdicts for t in v.technical_audit],
             ergonomics_ux=[t for v in verdicts for t in v.ergonomics_ux],
             remediation_steps=[t for v in verdicts for t in v.remediation_steps],
+            proposed_invariants=[t for v in verdicts for t in v.proposed_invariants],
             review_mode="llm_deep",
         )
 
@@ -411,6 +443,7 @@ Verified evidence (computed by guard over the whole repository, valid for every 
             tech_items = self._extract_bullet_items(text, "TECHNICAL")
             ergo_items = self._extract_bullet_items(text, "ERGONOMICS")
             remed_items = self._extract_bullet_items(text, "REMEDIATION")
+            proposals = _parse_invariant_proposals(text)
             if any(item.lower() == "none" for item in remed_items):
                 remed_items = []
 
@@ -423,6 +456,7 @@ Verified evidence (computed by guard over the whole repository, valid for every 
                 technical_audit=tech_items,
                 ergonomics_ux=ergo_items,
                 remediation_steps=remed_items,
+                proposed_invariants=proposals,
                 review_mode="llm_deep",
             )
         except Exception:

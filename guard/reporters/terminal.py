@@ -59,7 +59,7 @@ def render_pre_task_terminal(pre: PreTaskRecord):
             inv_table.add_row(inv.id, inv.description, f"{inv.rationale} [{inv.source}{', ' + status if status else ''}]")
         console.print(inv_table)
         if all(inv.source == "template" for inv in pre.locked_invariants):
-            console.print("[yellow]⚠️ Generic domain templates: add guard.invariants.json to lock this project's real invariants.[/yellow]")
+            console.print("[yellow]⚠️ Generic domain templates: run `guard invariants init` to create guard.invariants.json with this project's real invariants.[/yellow]")
 
     for r in pre.restarts:
         console.print(f"[bold yellow]⚠️ Restarted over session {r.get('session_id')} ({r.get('status')}); baseline and scope inherited.[/bold yellow]")
@@ -183,6 +183,11 @@ def render_post_task_terminal(post: PostTaskRecord, pre: Optional[PreTaskRecord]
                 loc = f"{v.file_path}:{v.line_number}" if v.line_number else v.file_path
                 simplicity_table.add_row(v.rule_id, v.severity, loc, v.message)
             console.print(simplicity_table)
+
+    for i in post.learned_invariants:
+        console.print(f"[bold green]➕ Learned invariant {i} → guard.invariants.json (enforced from next guard pre)[/bold green]")
+    for r in post.rejected_invariant_proposals:
+        console.print(f"[dim]✖️ Invariant proposal not added: {r}[/dim]")
 
     if post.diff_summary:
         net = post.diff_summary.total_insertions - post.diff_summary.total_deletions

@@ -14,6 +14,7 @@ Provides:
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -35,7 +36,15 @@ from guard.core.hygiene_engine import HygieneEngine
 from guard.core.llm_reviewer import LLMReviewerEngine, ReviewVerdict
 from guard.core.ocr_engine import GitDiffInspector, OCRRulebookRunner, RuleViolation
 from guard.core.removal_check import check_removed_symbols
-from guard.core.project_invariants import INVARIANTS_FILENAME, InvariantsFileError, load_project_invariants
+from guard.core.project_invariants import (
+    INVARIANTS_FILENAME,
+    InvariantsFileError,
+    append_learned_invariants,
+    evaluate_checks,
+    init_invariants_file,
+    load_project_invariants,
+    removed_or_relaxed,
+)
 from guard.core.simplicity_engine import SimplicityEngine
 from guard.core.session import BuildCheckResult, PostTaskRecord, SessionManager, SessionStatus
 from guard.core.updater import (
@@ -96,6 +105,17 @@ def _fingerprint(path: Path) -> str:
     if not path.is_file():
         return "<deleted>"
     return hashlib.sha1(path.read_bytes()).hexdigest()
+
+
+def _file_at(repo: Path, ref: Optional[str], path: str) -> Optional[str]:
+    """Content of `path` at commit `ref`, or None."""
+    if not ref:
+        return None
+    res = subprocess.run(
+        ["git", "-C", str(repo), "show", f"{ref}:{path}"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
+    )
+    return res.stdout if res.returncode == 0 else None
 
 
 def _drop_diff_files(raw_diff: str, drop: set) -> str:
@@ -296,6 +316,11 @@ def execute_post_task(
         if f.path in baseline_dirty and baseline_dirty[f.path] == _fingerprint(target_repo / f.path):
             f.preexisting = True
             f.is_out_of_scope = False
+    # guard.invariants.json may grow outside the declared scope (guard writes learned rules into it);
+    # removing or relaxing an existing rule is checked separately below and blocks.
+    for f in diff_summary.files:
+        if f.path == INVARIANTS_FILENAME:
+            f.is_out_of_scope = False
     diff_summary.out_of_scope_files = [f.path for f in diff_summary.files if f.is_out_of_scope]
     preexisting_files = [f.path for f in diff_summary.files if f.preexisting]
     deleted_files = [f.path for f in diff_summary.files if f.status == "deleted" and not f.preexisting]
@@ -345,6 +370,25 @@ def execute_post_task(
     removal_violations, removal_summary = check_removed_symbols(target_repo, task_diff)
     violations.extend(removal_violations)
     evidence = [removal_summary] if removal_summary else []
+
+    # Weakening the rulebook is never a side effect: a removed or relaxed invariant blocks
+    if pre and any(f.path == INVARIANTS_FILENAME for f in diff_summary.files):
+        base_text = _file_at(target_repo, pre.baseline_snapshot or pre.base_ref, INVARIANTS_FILENAME)
+        if base_text:
+            try:
+                old_items = json.loads(base_text).get("invariants", [])
+                new_items = load_project_invariants(target_repo) or []
+            except (ValueError, AttributeError, InvariantsFileError):
+                old_items, new_items = [], []
+            declared = scope_declared and diff_inspector._is_expected(INVARIANTS_FILENAME, expected_files)
+            for note in removed_or_relaxed(old_items, new_items):
+                violations.append(RuleViolation(
+                    rule_id="INV-WEAKENED",
+                    # An explicitly scoped rulebook edit is reviewed; a silent one blocks
+                    severity="HIGH" if declared else "CRITICAL",
+                    file_path=INVARIANTS_FILENAME,
+                    message=f"Invariant {note}. Removing or relaxing a project invariant needs an explicit task and review.",
+                ))
 
     hygiene = HygieneEngine(target_repo)
     if (focus or "").lower() in ("dead-code", "hygiene"):
@@ -453,6 +497,12 @@ def execute_post_task(
 
     all_passed = (review_verdict.verdict == ReviewVerdict.APPROVED)
 
+    # Rules the reviewer discovered are written only after validation (new, and passing on this code),
+    # before fingerprints are taken so the updated file is part of what was approved.
+    learned, rejected_props = append_learned_invariants(
+        target_repo, review_verdict.proposed_invariants, session.session_id if session else "unknown",
+    )
+
     # 6. Save Post Record
     post_rec = PostTaskRecord(
         files_modified=[f.path for f in diff_summary.files],
@@ -471,8 +521,13 @@ def execute_post_task(
         preexisting_files=preexisting_files,
         deleted_files=deleted_files,
         approved_fingerprints=(
-            {f.path: _fingerprint(target_repo / f.path) for f in diff_summary.files} if all_passed else {}
+            {
+                p: _fingerprint(target_repo / p)
+                for p in {f.path for f in diff_summary.files} | ({INVARIANTS_FILENAME} if learned else set())
+            } if all_passed else {}
         ),
+        learned_invariants=learned,
+        rejected_invariant_proposals=rejected_props,
     )
 
     session_mgr.complete_post_session(post_rec)
@@ -586,6 +641,66 @@ def run_cmd(
     )
     if code != 0:
         raise typer.Exit(code=code)
+
+
+# Subcommand: guard invariants
+invariants_app = typer.Typer(
+    name="invariants",
+    help="📜 Create and check guard.invariants.json (project rules checked by pre/post)",
+    no_args_is_help=True,
+)
+app.add_typer(invariants_app, name="invariants")
+
+
+@invariants_app.command("init")
+def invariants_init_cmd(
+    repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
+):
+    """
+    Create guard.invariants.json, importing numbered items under an 'Invariants' / 'Bất biến'
+    heading of AGENT.md / AGENTS.md / CLAUDE.md. Never overwrites an existing file.
+    """
+    target_repo = Path(repo).resolve() if repo else Path.cwd().resolve()
+    path, created, imported = init_invariants_file(target_repo)
+    if not created:
+        console.print(f"[yellow]{path} already exists; nothing changed. Run `guard invariants check`.[/yellow]")
+        return
+    console.print(f"[bold green]✅ Created {path}[/bold green] with {imported} invariant(s) imported from agent docs.")
+    if imported:
+        console.print("[dim]Imported entries have no checks yet (UNVERIFIED): add {\"files\": glob, \"forbid\"|\"require\": regex} checks, then run `guard invariants check`.[/dim]")
+
+
+@invariants_app.command("check")
+def invariants_check_cmd(
+    repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
+):
+    """
+    Evaluate guard.invariants.json on the current tree, without a guard session.
+    Exit code 1 when a check fails, 2 when the file is missing or malformed.
+    """
+    target_repo = Path(repo).resolve() if repo else Path.cwd().resolve()
+    try:
+        items = load_project_invariants(target_repo)
+    except InvariantsFileError as e:
+        console.print(f"[bold red]❌ {e}[/bold red]")
+        raise typer.Exit(code=2)
+    if items is None:
+        console.print(f"[yellow]No {INVARIANTS_FILENAME} in {target_repo}. Create it with `guard invariants init`.[/yellow]")
+        raise typer.Exit(code=2)
+
+    table = Table(title=f"📜 {INVARIANTS_FILENAME} ({len(items)} invariants)", show_header=True)
+    table.add_column("ID", style="bold")
+    table.add_column("Status", justify="center")
+    table.add_column("Notes", style="dim")
+    failed = 0
+    for inv in items:
+        status, note = evaluate_checks(target_repo, inv.get("checks") or [])
+        failed += status == "failed"
+        badge = {"passed": "[green]✅ PASSED[/green]", "failed": "[bold red]❌ FAILED[/bold red]"}.get(status, "[yellow]⚪ UNVERIFIED[/yellow]")
+        table.add_row(str(inv["id"]), badge, note)
+    console.print(table)
+    if failed:
+        raise typer.Exit(code=1)
 
 
 # Subcommand: guard config

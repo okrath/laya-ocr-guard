@@ -71,7 +71,7 @@ def generate_pre_task_markdown(pre: PreTaskRecord) -> str:
     if pre.non_regression_strategy:
         md.append(f"  - *Strategy:* {pre.non_regression_strategy}")
     if pre.locked_invariants and all(inv.source == "template" for inv in pre.locked_invariants):
-        md.append("  - ⚠️ Generic domain templates (no `guard.invariants.json` in repo); most cannot be verified automatically.")
+        md.append("  - ⚠️ Generic domain templates (no `guard.invariants.json` in repo); most cannot be verified automatically. Create the file with `guard invariants init`, then validate it with `guard invariants check`.")
     for inv in pre.locked_invariants:
         status = pre.baseline_invariant_status.get(inv.id)
         badge = f" {INVARIANT_ICONS.get(status, '')} baseline: {status}" if status else (" ⚪ manual" if not inv.checks else "")
@@ -158,5 +158,12 @@ def generate_post_task_markdown(post: PostTaskRecord, pre: Optional[PreTaskRecor
         md.append(f"  - *Assessment:* {post.muse_notes}")
     if post.llm_error:
         md.append(f"  - ⚠️ *LLM review did not run:* {post.llm_error}")
+
+    if post.learned_invariants or post.rejected_invariant_proposals:
+        md.append("\n* **Invariants learned in this review (`guard.invariants.json`):**")
+        for i in post.learned_invariants:
+            md.append(f"  - ➕ `{i}` added (passes on the current code; enforced from the next `guard pre`)")
+        for r in post.rejected_invariant_proposals:
+            md.append(f"  - ✖️ proposal not added: {r}")
 
     return "\n".join(md)

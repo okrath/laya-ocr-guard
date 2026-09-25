@@ -10,7 +10,7 @@ To strictly prevent regressions, feature breakage, and unintended code loss, **A
              ▼
 ┌────────────────────────────────────────────────────────┐
 │ 1. PRE-TASK HOOK (MANDATORY BEFORE TOUCHING ANY CODE): │
-│ • Run: `guard pre "<user_request>"`                    │
+│ • Run: `guard pre "<user_request>" --scope <path/glob>`│
 │ • Read: `.guard/PRE_TASK_NOTE.md` to learn Invariants  │
 │ • Present format: ### 🔍 PRE-TASK IMPACT NOTE          │
 └────────────────────────────────────────────────────────┘
@@ -25,6 +25,12 @@ To strictly prevent regressions, feature breakage, and unintended code loss, **A
 │ • Present format: ### 🧪 POST-TASK VERIFICATION       │
 └────────────────────────────────────────────────────────┘
 ```
+
+**Gate rules:**
+- Run `guard pre` on a clean working tree, before the first edit. It refuses a dirty tree unless `--allow-dirty` (for unrelated work that must stay; the report flags every pre-existing change). An unfinished or rejected session can only be restarted with `--force`: the restart keeps the original baseline, base commit and scope, is recorded in the report, and files covered only by scope added in the restart fail as SCOPE-004.
+- Declare scope with file names in the request or `--scope` (repeatable, globs allowed). Without a scope, the post report says scope was not audited.
+- Project invariants live in `guard.invariants.json` at the repository root (`checks`: `{"files": glob, "forbid"|"require": regex}`). `guard invariants init` creates it from this file's invariant section, `guard invariants check` validates it. Invariants without checks are UNVERIFIED and must be verified manually. The LLM gate may add rules it discovers (only when they pass on the current code); commit those additions with the task. Never remove or relax an invariant unless the task explicitly asks for it and declares the file in `--scope`.
+- The report names the gate that actually ran: "LLM Gate" only when the LLM answered, otherwise "Heuristic Gate" plus the reason.
 
 ---
 
