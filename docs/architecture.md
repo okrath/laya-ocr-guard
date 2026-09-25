@@ -1,5 +1,7 @@
 # Architectural Specification: Dual-Gate Safety Harness
 
+> 📦 **GitHub Repository:** [github.com/okrath/laya-ocr-guard](https://github.com/okrath/laya-ocr-guard) &bull; 👤 **Author:** [@okrath](https://github.com/okrath) &bull; 📖 **Live Documentation:** [okrath.github.io/laya-ocr-guard](https://okrath.github.io/laya-ocr-guard/)
+
 `laya-ocr-guard` implements a **Dual-Gate Agentic Architecture** (the Sandwich Pattern) designed to eliminate silent regressions, security violations, and memory leaks when using AI Coding Agents.
 
 ---
@@ -63,6 +65,8 @@ AI Coding Agents (`omp`, Claude Code, Cursor, Windsurf, Aider) automatically ing
 
 ### Layer 2: Git Hook Defense (`.git/hooks/pre-commit`)
 If an agent fails to run the post-task check or makes out-of-scope edits, the Git `pre-commit` hook intercepts `git commit`, executes the full verification pipeline, and automatically aborts the commit if compilation fails, invariants are broken, or the LLM rejects the change.
-
 ### Layer 3: Process Harness Wrapper (`guard run`)
 For external CI/CD pipelines or headless scripts, `guard run "<prompt>" -- <command>` enforces the complete sandwich sequence as a single atomic process.
+
+---
+*Created and maintained by [@okrath](https://github.com/okrath) &mdash; Source code available at [github.com/okrath/laya-ocr-guard](https://github.com/okrath/laya-ocr-guard).*

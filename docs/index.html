@@ -118,10 +118,51 @@
       padding: 20px;
       margin-bottom: 20px;
     }
+    .github-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #21262d;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+    .github-btn:hover {
+      background: #30363d;
+      color: #58a6ff;
+      border-color: #8b949e;
+    }
+    .repo-banner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: rgba(88, 166, 255, 0.08);
+      border: 1px solid rgba(88, 166, 255, 0.2);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin: 16px 0 24px 0;
+    }
+    .repo-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .repo-badges a {
+      text-decoration: none;
+    }
     @media (max-width: 768px) {
       body { flex-direction: column; }
       #sidebar { width: 100%; height: auto; position: static; border-right: none; border-bottom: 1px solid var(--border); }
       #content { padding: 24px 16px; }
+      .repo-banner { flex-direction: column; align-items: flex-start; }
     }
   </style>
 </head>
@@ -129,6 +170,12 @@
 
   <nav id="sidebar">
     <h2>🛡️ Laya-OCR-Guard</h2>
+    <div style="margin-bottom: 16px;">
+      <a href="https://github.com/okrath/laya-ocr-guard" target="_blank" rel="noopener noreferrer" class="github-btn" style="width: 100%; justify-content: center; box-sizing: border-box;">
+        <svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+        <span>okrath/laya-ocr-guard</span>
+      </a>
+    </div>
     <ul>
       <li><a href="#overview">Overview & Vision</a></li>
       <li><a href="#three-pillars">Three-Pillar Architecture</a></li>
@@ -143,6 +190,24 @@
 
   <main id="content">
     <h1>🛡️ Laya-OCR-Guard Documentation</h1>
+    <div class="repo-banner">
+      <div class="repo-badges">
+        <a href="https://github.com/okrath/laya-ocr-guard" target="_blank" rel="noopener noreferrer">
+          <span class="badge badge-blue">📦 okrath/laya-ocr-guard</span>
+        </a>
+        <span class="badge badge-green">v0.2.0</span>
+        <span class="badge badge-yellow">Apache-2.0</span>
+        <a href="https://github.com/okrath" target="_blank" rel="noopener noreferrer">
+          <span class="badge" style="background: rgba(139, 148, 158, 0.15); color: #8b949e; border: 1px solid rgba(139, 148, 158, 0.3);">👤 Author: @okrath</span>
+        </a>
+      </div>
+      <div>
+        <a href="https://github.com/okrath/laya-ocr-guard" target="_blank" rel="noopener noreferrer" class="github-btn">
+          <svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+          ⭐ Star on GitHub
+        </a>
+      </div>
+    </div>
     <p>
       <strong>Dual-Gate Impact Analysis & Regression Guard for AI-Assisted Development.</strong><br>
       A zero-token, high-velocity safety harness wrapping AI coding agents (Claude Code, Cursor, Windsurf, Aider, omp) to prevent regressions, security leaks, memory leaks, and breaking changes.
@@ -396,8 +461,14 @@ guard update
 guard update --force</code></pre>
     </section>
 
-    <footer style="margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.85rem;">
-      Laya-OCR-Guard is open-source under the Apache-2.0 License. Built for production-grade AI-assisted software engineering.
+    <footer style="margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+      <div>
+        <strong>Laya-OCR-Guard</strong> v0.2.0 is an open-source project by <a href="https://github.com/okrath" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">@okrath</a> under the Apache-2.0 License.
+      </div>
+      <div>
+        <a href="https://github.com/okrath/laya-ocr-guard" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">GitHub Repository</a> &bull;
+        <a href="https://github.com/okrath/laya-ocr-guard/issues" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">Report Issue</a>
+      </div>
     </footer>
   </main>
 

@@ -1,6 +1,8 @@
 # The 2D Quality Matrix: Platform Domains × Quality Pillars
 
-`guard` evaluates code safety across a two-dimensional matrix combining **4 Platform Domains** with **5 Cross-Cutting Quality Pillars**.
+> 📦 **GitHub Repository:** [github.com/okrath/laya-ocr-guard](https://github.com/okrath/laya-ocr-guard) &bull; 👤 **Author:** [@okrath](https://github.com/okrath) &bull; 📖 **Live Documentation:** [okrath.github.io/laya-ocr-guard](https://okrath.github.io/laya-ocr-guard/)
+
+`guard` evaluates code safety across a two-dimensional matrix combining **4 Platform Domains** with **6 Cross-Cutting Quality Pillars**.
 
 ---
 
@@ -82,3 +84,6 @@ guard review --focus performance
 # Deep-dive on responsive UX and keyboard shortcuts:
 guard review --focus ux
 ```
+
+---
+*Created and maintained by [@okrath](https://github.com/okrath) &mdash; Source code available at [github.com/okrath/laya-ocr-guard](https://github.com/okrath/laya-ocr-guard).*

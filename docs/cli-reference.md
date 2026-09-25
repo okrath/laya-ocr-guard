@@ -1,9 +1,10 @@
 # CLI Command Reference: `guard`
 
+> 📦 **GitHub Repository:** [github.com/okrath/laya-ocr-guard](https://github.com/okrath/laya-ocr-guard) &bull; 👤 **Author:** [@okrath](https://github.com/okrath) &bull; 📖 **Live Documentation:** [okrath.github.io/laya-ocr-guard](https://okrath.github.io/laya-ocr-guard/)
+
 Complete command-line manual for `laya-ocr-guard`.
 
 ---
-
 ## 1. `guard pre`
 
 Runs the Pre-Task Guard phase before modifying code.
@@ -133,3 +134,6 @@ guard doctor [options]
 ### Options:
 * `--updates / --no-updates`: Toggle npm registry update checking (default: on).
 * `-q, --quarantine-days <float>`: Cooling period in days (default: 3.0 days).
+
+---
+*Created and maintained by [@okrath](https://github.com/okrath) &mdash; Source code available at [github.com/okrath/laya-ocr-guard](https://github.com/okrath/laya-ocr-guard).*
