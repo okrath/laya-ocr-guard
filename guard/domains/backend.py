@@ -90,24 +90,24 @@ class BackendDomainAnalyzer(BaseDomainAnalyzer):
         return [
             LockedInvariant(
                 id="BE-INV-01",
-                description="Không làm thay đổi schema của JSON Response cũ (tránh breaking changes cho client Mobile & FE).",
-                rationale="Bảo vệ tương thích ngược API Contract.",
+                description="Do not break existing JSON response schemas (maintain backwards compatibility for mobile & web clients).",
+                rationale="Prevent client-side breaking API contracts.",
             ),
             LockedInvariant(
                 id="BE-INV-02",
-                description="Bắt buộc sử dụng Parameterized Query hoặc ORM, tuyệt đối không nối chuỗi thô trong SQL.",
-                rationale="Chặn đứng nguy cơ SQL Injection.",
+                description="Must use parameterized queries or ORM models. Never concatenate raw untrusted input in SQL.",
+                rationale="Prevent SQL Injection vulnerabilities.",
             ),
             LockedInvariant(
                 id="BE-INV-03",
-                description="Mọi thao tác ghi dữ liệu nhiều bảng phải nằm trong Database Transaction có Rollback khi lỗi.",
-                rationale="Bảo vệ tính toàn vẹn dữ liệu (ACID).",
+                description="Multi-table database mutations must be encapsulated within an atomic transaction with rollback.",
+                rationale="Protect database consistency (ACID).",
             ),
         ]
 
     def generate_targeted_test_plan(self, files: List[str], diff_text: str) -> List[str]:
         return [
-            "Chạy integration/unit tests cho các endpoint bị chỉnh sửa.",
-            "Test trường hợp lỗi (Negative Test): gửi payload thiếu trường bắt buộc xem API có trả 400 Bad Request chuẩn không.",
-            "Kiểm tra xác thực: gọi API khi không truyền Auth Token xem có bị chặn 401 Unauthorized không.",
+            "Execute unit and integration tests for modified API endpoints.",
+            "Negative testing: send requests missing mandatory fields to verify standard 400 Bad Request responses.",
+            "Authentication testing: verify unauthenticated calls receive 401 Unauthorized.",
         ]

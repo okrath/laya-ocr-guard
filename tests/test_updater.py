@@ -41,7 +41,7 @@ def test_ocr_update_quarantine_hold():
          patch("guard.core.updater.get_installed_ocr_version", return_value="1.12.9"):
         res = check_ocr_update(quarantine_days=3.0)
         assert res.status == UpdateSecurityStatus.QUARANTINE_HOLD
-        assert "CÁCH LY BẢO MẬT" in res.recommendation
+        assert "QUARANTINE HOLD" in res.recommendation
 
 
 def test_ocr_update_safe_available():
@@ -58,7 +58,7 @@ def test_ocr_update_safe_available():
          patch("guard.core.updater.get_installed_ocr_version", return_value="1.12.9"):
         res = check_ocr_update(quarantine_days=3.0)
         assert res.status == UpdateSecurityStatus.SAFE_UPDATE_AVAILABLE
-        assert "Nâng cấp an toàn" in res.recommendation
+        assert "Safe upgrade available" in res.recommendation
 
 
 def test_ocr_update_up_to_date():
@@ -90,7 +90,7 @@ def test_perform_ocr_upgrade_blocked_by_quarantine():
     with patch("guard.core.updater.check_ocr_update", return_value=mock_check):
         success, msg = perform_ocr_upgrade(force=False, quarantine_days=3.0)
         assert success is False
-        assert "CÁCH LY BẢO MẬT" in msg
+        assert "QUARANTINE HOLD" in msg
 
 
 def test_perform_ocr_upgrade_force_allowed():
@@ -110,4 +110,4 @@ def test_perform_ocr_upgrade_force_allowed():
          patch("subprocess.run", return_value=mock_proc):
         success, msg = perform_ocr_upgrade(force=True, quarantine_days=3.0)
         assert success is True
-        assert "Đã nâng cấp thành công" in msg
+        assert "Successfully upgraded" in msg

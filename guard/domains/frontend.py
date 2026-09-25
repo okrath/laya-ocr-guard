@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from guard.core.session import DomainContract, LockedInvariant
 from guard.domains.base import BaseDomainAnalyzer
@@ -37,7 +37,6 @@ class FrontendDomainAnalyzer(BaseDomainAnalyzer):
         if not pkg_json.exists():
             return None
 
-        # Detect package manager
         pm = "npm"
         if (repo_path / "pnpm-lock.yaml").exists():
             pm = "pnpm"
@@ -60,7 +59,7 @@ class FrontendDomainAnalyzer(BaseDomainAnalyzer):
         contracts: List[DomainContract] = []
         ui_files = [f for f in files if any(f.endswith(ext) for ext in [".tsx", ".jsx", ".vue", ".svelte", ".html", ".css"])]
 
-        for rel_path in ui_files[:5]:  # inspect up to 5 files
+        for rel_path in ui_files[:5]:
             p = repo_path / rel_path
             if not p.is_file():
                 continue
@@ -72,7 +71,7 @@ class FrontendDomainAnalyzer(BaseDomainAnalyzer):
                     contracts.append(DomainContract(
                         category="UI_STATE",
                         name=f"{Path(rel_path).stem}_loading_state",
-                        description=f"Preserve loading/skeleton feedback in {rel_path}",
+                        description=f"Preserve loading/skeleton visual feedback in {rel_path}",
                     ))
 
                 # Check for disabled button states
@@ -80,7 +79,7 @@ class FrontendDomainAnalyzer(BaseDomainAnalyzer):
                     contracts.append(DomainContract(
                         category="UI_STATE",
                         name=f"{Path(rel_path).stem}_disabled_behavior",
-                        description=f"Preserve button disabled states during submission in {rel_path}",
+                        description=f"Preserve button disabled state during form submission in {rel_path}",
                     ))
 
                 # Check for keyboard escape / modal dismissal
@@ -104,32 +103,31 @@ class FrontendDomainAnalyzer(BaseDomainAnalyzer):
         return contracts
 
     def generate_recommended_invariants(self, prompt: str, files: List[str]) -> List[LockedInvariant]:
-        invariants: List[LockedInvariant] = [
+        return [
             LockedInvariant(
                 id="FE-INV-01",
-                description="Không làm mất phản hồi trực quan (loading spinner/skeleton) khi người dùng thao tác.",
-                rationale="Tránh cảm giác đơ/treo giao diện (zero perceived latency).",
+                description="Do not break interactive loading feedback (spinners/skeletons) during user actions.",
+                rationale="Avoid perceived freezing and ensure zero perceived latency.",
             ),
             LockedInvariant(
                 id="FE-INV-02",
-                description="Bảo đảm các phím tắt công thái học (Escape, Enter, ArrowUp/Down) và đóng popup ngoài backdrop tiếp tục hoạt động.",
-                rationale="Chuẩn công thái học UI/UX và accessibility.",
+                description="Ensure ergonomic keyboard navigation (Escape, Enter, ArrowUp/Down) and backdrop modal dismissal work.",
+                rationale="Accessibility and ergonomic UI standards.",
             ),
             LockedInvariant(
                 id="FE-INV-03",
-                description="Giữ nguyên layout hiển thị tương thích trên màn hình mobile và tablet.",
-                rationale="Ngăn ngừa vỡ viewport hoặc tràn thanh cuộn ngang.",
+                description="Preserve responsive layouts across mobile, tablet, and desktop viewports without horizontal overflow.",
+                rationale="Prevent UI breakage across screen dimensions.",
             ),
         ]
-        return invariants
 
     def generate_targeted_test_plan(self, files: List[str], diff_text: str) -> List[str]:
         steps = [
-            "Kiểm tra giao diện trên cả 2 độ phân giải: Mobile (390px) và Desktop (1440px).",
-            "Bấm thử nút thao tác chính, kiểm tra trạng thái `disabled` và spinner xuất hiện tức thì.",
+            "Verify responsive layout across Mobile (390px) and Desktop (1440px) breakpoints.",
+            "Click primary action buttons to verify immediate `disabled` state and loading indicator.",
         ]
         if "modal" in diff_text.lower() or "dialog" in diff_text.lower():
-            steps.append("Mở Modal/Dialog, ấn phím 'Escape' và click ra backdrop ngoài xem popup có đóng êm không.")
+            steps.append("Open Modal/Dialog and verify pressing 'Escape' or clicking the backdrop dismisses it cleanly.")
         if "input" in diff_text.lower() or "textarea" in diff_text.lower():
-            steps.append("Thử gõ văn bản tiếng Việt có dấu (IME: telex/vni) xem có bị kẹt chữ hoặc mất focus không.")
+            steps.append("Test text input with IME (Asian/diacritic input methods) to verify text doesn't freeze or drop focus.")
         return steps

@@ -197,10 +197,10 @@ class LayaEngine:
 
         latency = (time.perf_counter() - start) * 1000
         labels = {
-            RiskLevel.LOW: "1/4 (Low - Thấp)",
-            RiskLevel.MEDIUM: "2/4 (Medium - Trung bình)",
-            RiskLevel.HIGH: "3/4 (High - Cao)",
-            RiskLevel.CRITICAL: "4/4 (Critical - Nguy cấp)",
+            RiskLevel.LOW: "1/4 (Low)",
+            RiskLevel.MEDIUM: "2/4 (Medium)",
+            RiskLevel.HIGH: "3/4 (High)",
+            RiskLevel.CRITICAL: "4/4 (Critical)",
         }
 
         return LayaTriageResult(
@@ -286,7 +286,6 @@ class LayaEngine:
             DomainType.MOBILE: len(re.findall(r"\b(flutter|ios|android|swift|kotlin|widget|screen|backstack|permission|camera|notch|safearray)\b", text)),
         }
 
-        # Check fullstack if multiple domains score high
         high_domains = [d for d, s in scores.items() if s >= 2]
         if len(high_domains) >= 2:
             return DomainType.FULLSTACK
@@ -313,7 +312,6 @@ class LayaEngine:
         if intent == TaskIntent.SECURITY or domain == DomainType.INFRA:
             return RiskLevel.HIGH
         if domain == DomainType.FRONTEND:
-            # UI tasks are typically Medium or High depending on modal/form/checkout flow
             if re.search(r"\b(checkout|payment|auth|login)\b", text):
                 return RiskLevel.HIGH
             return RiskLevel.MEDIUM

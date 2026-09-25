@@ -1,21 +1,21 @@
 """
-Unit tests for Muse Reviewer Engine.
+Unit tests for Muse / LLM Reviewer Engine.
 """
 
 import pytest
 
 from guard.core.laya_engine import DomainType, InvariantCheck, LayaInvariantResult
-from guard.core.muse import MuseEngine, MuseVerdict
+from guard.core.llm_reviewer import LLMReviewerEngine, ReviewVerdict
 from guard.core.ocr_engine import DiffSummary, FileDiffStat, RuleViolation
 from guard.core.session import BuildCheckResult
 
 
 @pytest.fixture
-def muse():
-    return MuseEngine(config=None)
+def reviewer():
+    return LLMReviewerEngine(config=None)
 
 
-def test_muse_approve_clean_task(muse):
+def test_reviewer_approve_clean_task(reviewer):
     build_check = BuildCheckResult(
         command="npm run build",
         passed=True,
@@ -36,7 +36,7 @@ def test_muse_approve_clean_task(muse):
         latency_ms=1.0,
     )
 
-    verdict = muse.review(
+    verdict = reviewer.review(
         prompt="Update heading style in App.tsx",
         domain=DomainType.FRONTEND,
         diff_summary=diff,
@@ -46,12 +46,12 @@ def test_muse_approve_clean_task(muse):
         use_llm=False,
     )
 
-    assert verdict.verdict == MuseVerdict.APPROVED
+    assert verdict.verdict == ReviewVerdict.APPROVED
     assert verdict.score >= 9.0
     assert len(verdict.remediation_steps) == 0
 
 
-def test_muse_reject_on_build_failure(muse):
+def test_reviewer_reject_on_build_failure(reviewer):
     build_check = BuildCheckResult(
         command="npm run build",
         passed=False,
@@ -59,19 +59,19 @@ def test_muse_reject_on_build_failure(muse):
         output="TS2304: Cannot find name 'unknownVariable'",
         duration_s=1.5,
     )
-    verdict = muse.review(
+    verdict = reviewer.review(
         prompt="Add feature",
         domain=DomainType.FRONTEND,
         build_check=build_check,
         use_llm=False,
     )
 
-    assert verdict.verdict == MuseVerdict.REVISE
+    assert verdict.verdict == ReviewVerdict.REVISE
     assert verdict.score < 7.5
     assert any("TS2304" in step for step in verdict.remediation_steps)
 
 
-def test_muse_reject_on_critical_secret_and_scope_breach(muse):
+def test_reviewer_reject_on_critical_secret_and_scope_breach(reviewer):
     diff = DiffSummary(
         files=[FileDiffStat(path="src/Secret.ts", status="modified")],
         out_of_scope_files=["src/Secret.ts"],
@@ -84,7 +84,7 @@ def test_muse_reject_on_critical_secret_and_scope_breach(muse):
             message="Hardcoded API key detected",
         )
     ]
-    verdict = muse.review(
+    verdict = reviewer.review(
         prompt="Update login",
         domain=DomainType.BACKEND,
         diff_summary=diff,
@@ -92,27 +92,27 @@ def test_muse_reject_on_critical_secret_and_scope_breach(muse):
         use_llm=False,
     )
 
-    assert verdict.verdict == MuseVerdict.REVISE
+    assert verdict.verdict == ReviewVerdict.REVISE
     assert verdict.score <= 5.0
     assert any("SEC-001" in step for step in verdict.remediation_steps)
 
 
-def test_muse_llm_response_parsing(muse):
+def test_reviewer_llm_response_parsing(reviewer):
     raw_llm = """
 SCORE: 9.2
 VERDICT: APPROVED
-SUMMARY: Mã nguồn hoàn hảo, tuân thủ kiến trúc và không có rò rỉ bộ nhớ.
+SUMMARY: Source code is architecturally sound and clean of memory leaks.
 TECHNICAL:
-* Không có listener mồ côi
-* Build test sạch sẽ
+* No orphaned listeners
+* Build verification passed
 ERGONOMICS:
-* Giao diện responsive tốt
+* Responsive UI layout preserved
 REMEDIATION:
 None
     """
-    parsed = muse._parse_llm_response(raw_llm)
+    parsed = reviewer._parse_llm_response(raw_llm)
     assert parsed is not None
     assert parsed.score == 9.2
-    assert parsed.verdict == MuseVerdict.APPROVED
+    assert parsed.verdict == ReviewVerdict.APPROVED
     assert len(parsed.technical_audit) == 2
     assert len(parsed.remediation_steps) == 0

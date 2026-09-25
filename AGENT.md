@@ -1,49 +1,49 @@
-# 🛡️ GIAO THỨC BẮT BUỘC: LAYA-OCR-GUARD DUAL-GATE HOOK
+# 🛡️ MANDATORY PROTOCOL: LAYA-OCR-GUARD DUAL-GATE HOOK
 
-Tài liệu này quy định **Chỉ Thị Hoạt Động Bắt Buộc (Mandatory Agent Directives)** cho mọi AI Agent (`omp`, Claude Code, Cursor, Windsurf, Aider) khi làm việc trong kho mã nguồn này.
+This document establishes **Mandatory Operational Directives** for any AI Coding Agent (`omp`, Claude Code, Cursor, Windsurf, Aider) working in this repository.
 
-Để tránh tuyệt đối việc sửa tính năng này làm hỏng hoặc mất các tính năng cũ, **AI AGENT BẮT BUỘC PHẢI THỰC HIỆN ĐỦ 2 NHỊP HOOK BẰNG BASH TOOL**:
+To prevent regressions and protect existing working features, **AI AGENTS MUST EXECUTE BOTH HOOK PHASES VIA THE BASH TOOL**:
 
 ```text
-[Yêu Cầu Mới / Bugfix từ Người Dùng]
+[Incoming Task / Bugfix Request]
              │
              ▼
 ┌────────────────────────────────────────────────────────┐
-│ 1. NHỊP PRE-TASK (BẮT BUỘC TRƯỚC KHI SỬA BẤT KỲ CODE): │
-│ • Agent chạy lệnh: `guard pre "<yêu cầu>"`             │
-│ • Đọc file: `.guard/PRE_TASK_NOTE.md` để nắm Invariants│
-│ • Trình bày form: ### 🔍 PRE-TASK IMPACT NOTE          │
+│ 1. PRE-TASK HOOK (MANDATORY BEFORE TOUCHING ANY CODE): │
+│ • Run: `guard pre "<user_request>"`                    │
+│ • Read: `.guard/PRE_TASK_NOTE.md` to learn Invariants  │
+│ • Present format: ### 🔍 PRE-TASK IMPACT NOTE          │
 └────────────────────────────────────────────────────────┘
              │
-             ▼ (Agent tiến hành sửa code đúng phạm vi cho phép)
+             ▼ (Agent performs minimal, scoped, precise code edits)
              │
 ┌────────────────────────────────────────────────────────┐
-│ 2. NHỊP POST-TASK (BẮT BUỘC SAU KHI SỬA CODE XONG):    │
-│ • Agent chạy lệnh: `guard post`                        │
-│ • Kiểm tra kết quả build test & phán quyết LLM Gate    │
-│ • Nếu REVISE: Tự động sửa lại theo danh sách lỗi       │
-│ • Trình bày form: ### 🧪 POST-TASK VERIFICATION       │
+│ 2. POST-TASK HOOK (MANDATORY AFTER FINISHING EDITS):   │
+│ • Run: `guard post`                                    │
+│ • Verify build check, OCR diff rules & LLM Gate verdict│
+│ • If REVISE: Self-heal and fix listed violations       │
+│ • Present format: ### 🧪 POST-TASK VERIFICATION       │
 └────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### 📐 BẢNG MẪU BÁO CÁO BẮT BUỘC CỦA AGENT:
+### 📐 MANDATORY AGENT REPORTING FORMAT:
 
-Khi phản hồi Người Dùng, Agent phải luôn tuân thủ form mẫu minh bạch:
+When replying to the user, the Agent must strictly structure the response:
 
 ```markdown
 ### 🔍 PRE-TASK IMPACT NOTE:
-* **Hiện trạng chức năng:** [Mô tả tính năng hiện tại đã có gì]
-* **Dự kiến phạm vi tác động:** [Danh sách file sẽ thay đổi]
-* **Locked Invariants:** [Các bất biến kỹ thuật không được làm gãy]
+* **Current Baseline:** [Brief summary of existing functionality and contracts]
+* **Expected Impact Range:** [List of files and components to be modified]
+* **Locked Invariants:** [Technical constraints that must NOT be broken]
 
 ---
-(Nội dung thực hiện sửa đổi mã nguồn tối giản, chuẩn xác)
+(Implementation content: clean, minimal, scoped code modifications)
 ---
 
 ### 🧪 POST-TASK VERIFICATION:
-* **Phạm vi tác động thực tế:** [Những gì đã thay đổi cụ thể]
-* **Build Check:** [Kết quả build/test tự động từ guard post]
-* **LLM Gate Verdict:** [APPROVED hoặc REVISE]
+* **Actual Impact Range:** [Confirmed list of modified files]
+* **Build Check:** [Automated compilation & test results from guard post]
+* **LLM Gate Verdict:** [APPROVED or REVISE]
 ```

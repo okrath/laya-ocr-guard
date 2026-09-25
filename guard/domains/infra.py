@@ -85,24 +85,24 @@ class InfraDomainAnalyzer(BaseDomainAnalyzer):
         return [
             LockedInvariant(
                 id="INFRA-INV-01",
-                description="Tuyệt đối không hardcode mật khẩu, Private Key, hoặc Production API Key vào manifest/Dockerfile.",
-                rationale="Chặn đứng nguy cơ rò rỉ secret ra git history.",
+                description="Never hardcode passwords, private keys, or production secrets into manifests or Dockerfiles.",
+                rationale="Prevent critical secret exposure in git history.",
             ),
             LockedInvariant(
                 id="INFRA-INV-02",
-                description="Không mở port 0.0.0.0/0 cho các dịch vụ Database nội bộ (Postgres, Redis, Mongo).",
-                rationale="Ngăn ngừa tấn công quét cổng công khai.",
+                description="Do not bind internal database ports (PostgreSQL, Redis, MongoDB) to public 0.0.0.0/0 interfaces.",
+                rationale="Prevent public port-scanning and unauthorized database access.",
             ),
             LockedInvariant(
                 id="INFRA-INV-03",
-                description="Bảo đảm tính Zero-Downtime: cấu hình readiness/liveness probe hợp lệ trước khi route traffic.",
-                rationale="Tránh rớt service khi rolling update.",
+                description="Ensure zero-downtime rolling updates: configure valid readiness and liveness health checks.",
+                rationale="Avoid service outages during rolling deployments.",
             ),
         ]
 
     def generate_targeted_test_plan(self, files: List[str], diff_text: str) -> List[str]:
         return [
-            "Chạy cú pháp kiểm tra cấu hình: `docker compose config` hoặc `terraform validate`.",
-            "Soát lại git diff: xác nhận 100% không có chuỗi secret/token nào bị dán trực tiếp.",
-            "Kiểm tra port mapping và biến môi trường không làm gãy kết nối giữa các containers.",
+            "Run configuration validator: `docker compose config` or `terraform validate`.",
+            "Inspect git diff to confirm 100% absence of hardcoded tokens or API credentials.",
+            "Verify container port bindings and environment variables maintain service interconnectivity.",
         ]

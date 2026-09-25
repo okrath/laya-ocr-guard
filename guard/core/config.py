@@ -124,17 +124,17 @@ def run_llm_wizard(local: bool = False, repo_path: Optional[Path] = None) -> Gua
     current_cfg = load_config(repo_path)
     console.print(Panel(
         "[bold cyan]🤖 LAYA-OCR-GUARD — LLM CONFIGURATION WIZARD[/bold cyan]\n"
-        "[dim]Nhấn Enter để giữ nguyên giá trị mặc định trong ngoặc vuông [ ].[/dim]",
+        "[dim]Press Enter to accept default values in brackets [ ].[/dim]",
         border_style="cyan"
     ))
 
     # Step 1: Select Protocol
-    console.print("\n[bold yellow]Bước 1: Chọn chuẩn giao thức API (Protocol)[/bold yellow]")
-    console.print("  [1] [bold green]OpenAI / OpenAI-Compatible[/bold green] (OpenAI, Ollama, DeepSeek, OpenRouter, vLLM, Gateway...)")
+    console.print("\n[bold yellow]Step 1: Select API Protocol[/bold yellow]")
+    console.print("  [1] [bold green]OpenAI / OpenAI-Compatible[/bold green] (OpenAI, Ollama, DeepSeek, OpenRouter, vLLM, Local Gateway...)")
     console.print("  [2] [bold magenta]Anthropic[/bold magenta] (Claude API)")
     
     choice = Prompt.ask(
-        "Lựa chọn",
+        "Choice",
         choices=["1", "2"],
         default="1" if current_cfg.llm.protocol == LLMProtocol.OPENAI else "2",
         show_choices=False,
@@ -150,38 +150,38 @@ def run_llm_wizard(local: bool = False, repo_path: Optional[Path] = None) -> Gua
         default_model = current_cfg.llm.model if current_cfg.llm.model not in ["gpt-4o", "gpt-4o-mini"] else "claude-3-7-sonnet"
 
     # Step 2: Base URL
-    console.print(f"\n[bold yellow]Bước 2: Base URL[/bold yellow]")
+    console.print(f"\n[bold yellow]Step 2: Base URL[/bold yellow]")
     if protocol == LLMProtocol.OPENAI:
         console.print("[dim]• OpenAI: https://api.openai.com/v1\n• Ollama: http://localhost:11434/v1\n• DeepSeek: https://api.deepseek.com/v1\n• Local Gateway: http://127.0.0.1:8090/v1[/dim]")
     else:
         console.print("[dim]• Anthropic: https://api.anthropic.com/v1[/dim]")
         
-    base_url = Prompt.ask("Nhập Base URL", default=default_url)
+    base_url = Prompt.ask("Base URL", default=default_url)
 
     # Step 3: API Key
-    console.print(f"\n[bold yellow]Bước 3: API Key[/bold yellow]")
+    console.print(f"\n[bold yellow]Step 3: API Key[/bold yellow]")
     env_key = os.environ.get("OPENAI_API_KEY" if protocol == LLMProtocol.OPENAI else "ANTHROPIC_API_KEY", "")
     key_default = current_cfg.llm.api_key or env_key
     
     if protocol == LLMProtocol.OPENAI and ("localhost" in base_url or "127.0.0.1" in base_url) and not key_default:
-        console.print("[dim]Dùng local model (Ollama), có thể bấm Enter để trống key.[/dim]")
-        api_key = Prompt.ask("API Key (bỏ qua nếu là Ollama)", default="", password=True)
+        console.print("[dim]Local model detected (Ollama/Gateway). You can press Enter to leave blank if unauthenticated.[/dim]")
+        api_key = Prompt.ask("API Key (or Enter to skip)", default="", password=True)
     else:
-        api_key = Prompt.ask("Nhập API Key", default=key_default, password=True)
+        api_key = Prompt.ask("API Key", default=key_default, password=True)
 
     # Step 4: Model Name
-    console.print(f"\n[bold yellow]Bước 4: Model Name[/bold yellow]")
+    console.print(f"\n[bold yellow]Step 4: Model Name[/bold yellow]")
     if protocol == LLMProtocol.OPENAI:
-        console.print("[dim]Ví dụ: gpt-4o, deepseek-chat, muse, qwen2.5-coder:latest[/dim]")
+        console.print("[dim]Examples: gpt-4o, deepseek-chat, muse, qwen2.5-coder:latest[/dim]")
     else:
-        console.print("[dim]Ví dụ: claude-3-7-sonnet, claude-3-5-sonnet, claude-3-5-haiku[/dim]")
+        console.print("[dim]Examples: claude-3-7-sonnet, claude-3-5-sonnet, claude-3-5-haiku[/dim]")
         
-    model = Prompt.ask("Tên Model", default=default_model)
+    model = Prompt.ask("Model Name", default=default_model)
 
     # Step 5: Timeout
-    console.print(f"\n[bold yellow]Bước 5: Timeout[/bold yellow]")
-    console.print("[dim]Thời gian chờ phản hồi tối đa (giây). Dùng local gateway nên để 60-120s.[/dim]")
-    timeout_str = Prompt.ask("Timeout (giây)", default=str(int(current_cfg.llm.timeout or 60.0)))
+    console.print(f"\n[bold yellow]Step 5: Timeout[/bold yellow]")
+    console.print("[dim]Maximum request timeout in seconds. For browser automation or local LLMs, recommend 60-120s.[/dim]")
+    timeout_str = Prompt.ask("Timeout (seconds)", default=str(int(current_cfg.llm.timeout or 60.0)))
     try:
         timeout_val = float(timeout_str)
     except ValueError:
@@ -197,24 +197,24 @@ def run_llm_wizard(local: bool = False, repo_path: Optional[Path] = None) -> Gua
     current_cfg.llm = new_llm
 
     # Step 6: Test Ping
-    console.print(f"\n[bold yellow]Bước 6: Kiểm tra kết nối (Ping Test)[/bold yellow]")
-    do_ping = Confirm.ask("Bạn có muốn gửi ping kiểm tra kết nối ngay không?", default=True)
+    console.print(f"\n[bold yellow]Step 6: Connection Test (Ping Test)[/bold yellow]")
+    do_ping = Confirm.ask("Do you want to test the connection now?", default=True)
     if do_ping:
-        with console.status("[cyan]Đang gửi request kiểm tra tới LLM...[/cyan]"):
+        with console.status("[cyan]Sending connection test request to LLM endpoint...[/cyan]"):
             from guard.core.llm_client import ping_llm
             success, msg, latency = ping_llm(new_llm)
         if success:
-            console.print(f"[bold green]✅ Kết nối thành công![/bold green] (Phản hồi: {latency:.1f}ms - {msg})")
+            console.print(f"[bold green]✅ Connection Successful![/bold green] (Latency: {latency:.1f}ms - {msg})")
         else:
-            console.print(f"[bold red]❌ Kết nối thất bại:[/bold red] {msg}")
-            if not Confirm.ask("Vẫn tiếp tục lưu cấu hình này?", default=True):
-                console.print("[yellow]Đã hủy lưu cấu hình.[/yellow]")
+            console.print(f"[bold red]❌ Connection Failed:[/bold red] {msg}")
+            if not Confirm.ask("Do you still want to save this configuration?", default=True):
+                console.print("[yellow]Configuration discarded.[/yellow]")
                 return current_cfg
 
     # Step 7: Save & Auto-sync
     target_path = save_config(current_cfg, local=local, repo_path=repo_path)
-    scope_str = "Local (Repo)" if local else "Global (Toàn máy)"
-    console.print(f"[bold green]💾 Đã lưu cấu hình {scope_str} tại:[/bold green] [dim]{target_path}[/dim]")
+    scope_str = "Local (Repo)" if local else "Global"
+    console.print(f"[bold green]💾 Saved {scope_str} configuration at:[/bold green] [dim]{target_path}[/dim]")
 
     if current_cfg.ocr.auto_sync:
         synced, ocr_msg = sync_to_alibaba_ocr(new_llm)

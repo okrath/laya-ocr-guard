@@ -29,7 +29,6 @@ def ping_llm(cfg: LLMConfig) -> Tuple[bool, str, float]:
     
     try:
         if cfg.protocol == LLMProtocol.OPENAI:
-            # 1. Try standard /models endpoint first (Fast, 0 token, avoids triggering browser turns or heavy generation)
             models_url = f"{cfg.base_url.rstrip('/')}/models"
             if cfg.api_key:
                 headers["Authorization"] = f"Bearer {cfg.api_key}"
@@ -41,15 +40,14 @@ def ping_llm(cfg: LLMConfig) -> Tuple[bool, str, float]:
                     if res.status_code == 200:
                         return True, "OK (Verified via /models)", latency
                     elif res.status_code in [401, 403]:
-                        return False, f"HTTP {res.status_code}: API key không hợp lệ hoặc không có quyền truy cập", latency
+                        return False, f"HTTP {res.status_code}: Invalid API key or unauthorized", latency
             except httpx.ConnectError:
                 latency = (time.perf_counter() - start) * 1000
-                return False, f"Không thể kết nối tới {cfg.base_url}. Service đã khởi động chưa?", latency
+                return False, f"Cannot connect to {cfg.base_url}. Is the service running?", latency
             except Exception:
-                # If /models hits an unexpected error or 404, fallback to /chat/completions
                 pass
 
-            # 2. Fallback to /chat/completions
+            # Fallback to /chat/completions
             url = f"{cfg.base_url.rstrip('/')}/chat/completions"
             payload = {
                 "model": cfg.model,
@@ -71,7 +69,6 @@ def ping_llm(cfg: LLMConfig) -> Tuple[bool, str, float]:
                 headers["x-api-key"] = cfg.api_key
             headers["anthropic-version"] = "2023-06-01"
 
-            # 1. Try standard /models endpoint first
             models_url = f"{cfg.base_url.rstrip('/')}/models"
             try:
                 with httpx.Client(timeout=10.0) as client:
@@ -80,14 +77,14 @@ def ping_llm(cfg: LLMConfig) -> Tuple[bool, str, float]:
                     if res.status_code == 200:
                         return True, "OK (Verified via /models)", latency
                     elif res.status_code in [401, 403]:
-                        return False, f"HTTP {res.status_code}: API key không hợp lệ hoặc không có quyền", latency
+                        return False, f"HTTP {res.status_code}: Invalid API key or unauthorized", latency
             except httpx.ConnectError:
                 latency = (time.perf_counter() - start) * 1000
-                return False, f"Không thể kết nối tới {cfg.base_url}. Service đã khởi động chưa?", latency
+                return False, f"Cannot connect to {cfg.base_url}. Is the service running?", latency
             except Exception:
                 pass
 
-            # 2. Fallback to /messages
+            # Fallback to /messages
             url = f"{cfg.base_url.rstrip('/')}/messages"
             payload = {
                 "model": cfg.model,
@@ -108,10 +105,10 @@ def ping_llm(cfg: LLMConfig) -> Tuple[bool, str, float]:
 
     except httpx.ConnectError:
         latency = (time.perf_counter() - start) * 1000
-        return False, f"Không thể kết nối tới {cfg.base_url}. Service đã khởi động chưa?", latency
+        return False, f"Cannot connect to {cfg.base_url}. Is the service running?", latency
     except httpx.TimeoutException:
         latency = (time.perf_counter() - start) * 1000
-        return False, f"Connection timed out after {cfg.timeout}s (Quá thời gian chờ phản hồi)", latency
+        return False, f"Connection timed out after {cfg.timeout}s", latency
     except Exception as e:
         latency = (time.perf_counter() - start) * 1000
         return False, str(e), latency
@@ -124,9 +121,6 @@ def call_llm(
     temperature: float = 0.2,
     max_tokens: int = 2048,
 ) -> str:
-    """
-    Execute chat completion call using the configured protocol.
-    """
     headers = {"Content-Type": "application/json"}
     
     try:

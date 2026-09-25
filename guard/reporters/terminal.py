@@ -48,7 +48,7 @@ def render_pre_task_terminal(pre: PreTaskRecord):
 
     # Invariants Panel
     if pre.locked_invariants:
-        inv_table = Table(title="🔒 Locked Invariants (Tuyệt đối không được phá vỡ)", show_header=True, header_style="bold yellow")
+        inv_table = Table(title="🔒 Locked Invariants (Must NOT be broken)", show_header=True, header_style="bold yellow")
         inv_table.add_column("ID", style="bold yellow", width=12)
         inv_table.add_column("Invariant Rule", style="bold white")
         inv_table.add_column("Rationale", style="dim")
@@ -67,14 +67,14 @@ def render_post_task_terminal(post: PostTaskRecord, pre: Optional[PreTaskRecord]
     # Overall Verdict Badge (from the configured LLM / Gatekeeper)
     is_approved = post.muse_verdict == "APPROVED"
     badge_style = "bold white on green" if is_approved else "bold white on red"
-    badge_title = "✅ CHỐT CHẶN LLM: APPROVED (ĐẠT CHUẨN)" if is_approved else "❌ CHỐT CHẶN LLM: REVISE REQUIRED (CẦN SỬA LẠI)"
+    badge_title = "✅ FINAL LLM GATE: APPROVED" if is_approved else "❌ FINAL LLM GATE: REVISE REQUIRED"
 
     summary_text = Text()
     summary_text.append(f"{badge_title}\n\n", style=badge_style)
-    summary_text.append(f"Điểm số chất lượng LLM: ", style="bold")
+    summary_text.append(f"LLM Quality Score: ", style="bold")
     summary_text.append(f"{post.muse_score:.1f} / 10.0\n", style="bold yellow" if is_approved else "bold red")
     if post.muse_notes:
-        summary_text.append(f"Nhận xét từ LLM: {post.muse_notes}\n", style="italic")
+        summary_text.append(f"LLM Assessment: {post.muse_notes}\n", style="italic")
 
     console.print(Panel(summary_text, border_style="green" if is_approved else "red"))
 

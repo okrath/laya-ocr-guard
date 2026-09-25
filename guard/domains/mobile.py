@@ -83,24 +83,24 @@ class MobileDomainAnalyzer(BaseDomainAnalyzer):
         return [
             LockedInvariant(
                 id="MB-INV-01",
-                description="Bắt buộc bọc giao diện trong `SafeArea` để không bị đè bởi tai thỏ (notch), Dynamic Island hoặc thanh điều hướng.",
-                rationale="Đảm bảo công thái học trên tất cả các dòng máy iOS & Android.",
+                description="Must wrap views in `SafeArea` to prevent UI overlap with notches, dynamic islands, or navigation bars.",
+                rationale="Ensure ergonomics across all iOS & Android form factors.",
             ),
             LockedInvariant(
                 id="MB-INV-02",
-                description="Phải kiểm tra trạng thái quyền (Permission status) trước khi gọi API phần cứng (Camera, GPS, Micro).",
-                rationale="Ngăn ngừa crash ứng dụng ngay lập tức khi người dùng từ chối cấp quyền.",
+                description="Always verify runtime permission status before accessing hardware devices (Camera, GPS, Microphone).",
+                rationale="Prevent application crashes when users deny permissions.",
             ),
             LockedInvariant(
                 id="MB-INV-03",
-                description="Khi mất kết nối Internet, ứng dụng phải hiển thị dữ liệu đã cache gần nhất hoặc màn hình offline thân thiện.",
-                rationale="Bảo vệ trải nghiệm người dùng di động trong điều kiện mạng chập chờn.",
+                description="When network connection is lost, application must render cached state or a user-friendly offline view.",
+                rationale="Protect mobile UX under unstable network conditions.",
             ),
         ]
 
     def generate_targeted_test_plan(self, files: List[str], diff_text: str) -> List[str]:
         return [
-            "Kiểm tra ứng dụng trên máy ảo/thực tế có tai thỏ (iPhone) và thanh điều hướng ảo (Android).",
-            "Tắt Wifi/4G (bật Chế độ máy bay) rồi mở lại màn hình vừa sửa xem có bị văng ứng dụng (crash) không.",
-            "Thử từ chối cấp quyền một tính năng và kiểm tra app có xử lý êm (graceful prompt) không.",
+            "Test application on devices with camera notches (iPhone) and navigation bars (Android).",
+            "Simulate Airplane Mode to verify app renders offline cached data without crashing.",
+            "Test user permission denial to ensure graceful degradation prompts.",
         ]

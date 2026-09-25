@@ -84,7 +84,7 @@ def check_ocr_update(quarantine_days: float = 3.0, timeout: float = 4.0) -> Vers
                     registry=registry,
                     installed_version=installed,
                     status=UpdateSecurityStatus.CHECK_FAILED,
-                    recommendation=f"HTTP {res.status_code} khi kiểm tra npm registry",
+                    recommendation=f"HTTP {res.status_code} while querying npm registry",
                 )
             data = res.json()
             latest = data.get("dist-tags", {}).get("latest", "")
@@ -92,7 +92,7 @@ def check_ocr_update(quarantine_days: float = 3.0, timeout: float = 4.0) -> Vers
             upload_iso = times.get(latest)
 
             age_days: Optional[float] = None
-            date_display = "Không rõ"
+            date_display = "Unknown"
             if upload_iso:
                 rel_dt = datetime.fromisoformat(upload_iso.replace("Z", "+00:00"))
                 now_dt = datetime.now(timezone.utc)
@@ -108,7 +108,7 @@ def check_ocr_update(quarantine_days: float = 3.0, timeout: float = 4.0) -> Vers
                     release_date=date_display,
                     age_days=age_days,
                     status=UpdateSecurityStatus.NOT_INSTALLED,
-                    recommendation="Tùy chọn: cài bằng `npm install -g @alibaba-group/open-code-review`.",
+                    recommendation="Optional: install via `npm install -g @alibaba-group/open-code-review`",
                 )
 
             if installed == "installed" or not is_version_newer(latest, installed):
@@ -120,7 +120,7 @@ def check_ocr_update(quarantine_days: float = 3.0, timeout: float = 4.0) -> Vers
                     release_date=date_display,
                     age_days=age_days,
                     status=UpdateSecurityStatus.UP_TO_DATE,
-                    recommendation="Đã cài đặt bản mới nhất hoặc bản hiện hành ổn định.",
+                    recommendation="Up-to-date with latest stable release.",
                 )
 
             # Newer version on npm! Check quarantine period
@@ -133,7 +133,7 @@ def check_ocr_update(quarantine_days: float = 3.0, timeout: float = 4.0) -> Vers
                     release_date=date_display,
                     age_days=age_days,
                     status=UpdateSecurityStatus.QUARANTINE_HOLD,
-                    recommendation=f"🛡️ CÁCH LY BẢO MẬT: v{latest} mới ra mắt {age_days:.1f} ngày (< {quarantine_days:.0f} ngày). Giữ v{installed} để chờ kiểm chứng cộng đồng (chống backdoor).",
+                    recommendation=f"🛡️ QUARANTINE HOLD: v{latest} released {age_days:.1f}d ago (< {quarantine_days:.0f}d). Retain v{installed} to prevent supply-chain backdoors.",
                 )
 
             return VersionCheckResult(
@@ -144,7 +144,7 @@ def check_ocr_update(quarantine_days: float = 3.0, timeout: float = 4.0) -> Vers
                 release_date=date_display,
                 age_days=age_days,
                 status=UpdateSecurityStatus.SAFE_UPDATE_AVAILABLE,
-                recommendation=f"⬆️ Nâng cấp an toàn (Đã phát hành {age_days:.1f} ngày trước): `npm install -g {package_name}`",
+                recommendation=f"⬆️ Safe upgrade available (Released {age_days:.1f}d ago): `npm install -g {package_name}`",
             )
 
     except Exception as e:
@@ -153,7 +153,7 @@ def check_ocr_update(quarantine_days: float = 3.0, timeout: float = 4.0) -> Vers
             registry=registry,
             installed_version=installed,
             status=UpdateSecurityStatus.CHECK_FAILED,
-            recommendation=f"Không thể kiểm tra npm ({str(e)[:60]})",
+            recommendation=f"Failed to query npm registry ({str(e)[:60]})",
         )
 
 
@@ -163,29 +163,29 @@ def perform_ocr_upgrade(force: bool = False, quarantine_days: float = 3.0) -> Tu
     """
     check = check_ocr_update(quarantine_days=quarantine_days)
     if check.status == UpdateSecurityStatus.UP_TO_DATE:
-        return True, f"Alibaba OCR đã ở phiên bản mới nhất ({check.installed_version or 'latest'}). Không cần cập nhật."
+        return True, f"Alibaba OCR is already up to date ({check.installed_version or 'latest'}). No update needed."
 
     if check.status == UpdateSecurityStatus.QUARANTINE_HOLD and not force:
         return False, (
-            f"🛡️ CÁCH LY BẢO MẬT: v{check.latest_version} mới ra mắt {check.age_days:.1f} ngày (< {quarantine_days:.0f} ngày).\n"
-            f"Để phòng ngừa backdoor và tấn công chuỗi cung ứng npm, Guard CHẶN nâng cấp tự động.\n"
-            f"💡 Nếu bạn vẫn muốn bỏ qua cảnh báo bảo mật, hãy dùng: guard update --force"
+            f"🛡️ QUARANTINE HOLD: v{check.latest_version} was released {check.age_days:.1f}d ago (< {quarantine_days:.0f}d).\n"
+            f"To prevent zero-day backdoors and npm supply-chain attacks, Guard halts automated upgrade.\n"
+            f"💡 To bypass security quarantine explicitly, use: guard update --force"
         )
 
     npm_bin = shutil.which("npm")
     if not npm_bin:
-        return False, "Không tìm thấy lệnh 'npm' trong PATH. Hãy cài đặt Node.js/npm trước."
+        return False, "'npm' command not found in PATH. Please install Node.js/npm first."
 
     pkg_spec = f"@alibaba-group/open-code-review@{check.latest_version}" if check.latest_version else "@alibaba-group/open-code-review@latest"
     try:
         proc = subprocess.run([npm_bin, "install", "-g", pkg_spec], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         if proc.returncode == 0:
             new_ver = get_installed_ocr_version() or check.latest_version or "latest"
-            return True, f"✅ Đã nâng cấp thành công Alibaba OCR lên phiên bản v{new_ver}!"
+            return True, f"✅ Successfully upgraded Alibaba OCR to version v{new_ver}!"
         err_out = (proc.stderr or "") + (proc.stdout or "")
-        return False, f"npm install thất bại (exit code {proc.returncode}): {err_out}"
+        return False, f"npm install failed (exit code {proc.returncode}): {err_out}"
     except Exception as e:
-        return False, f"Lỗi khi chạy npm install: {str(e)}"
+        return False, f"Error running npm install: {str(e)}"
 
 
 def perform_self_upgrade() -> Tuple[bool, str]:
@@ -196,8 +196,8 @@ def perform_self_upgrade() -> Tuple[bool, str]:
     try:
         proc = subprocess.run(pip_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         if proc.returncode == 0:
-            return True, "✅ Đã nâng cấp thành công Laya-OCR-Guard từ GitHub repository!"
+            return True, "✅ Successfully upgraded Laya-OCR-Guard from GitHub repository!"
         err_out = (proc.stderr or "") + (proc.stdout or "")
-        return False, f"pip upgrade thất bại: {err_out}"
+        return False, f"pip upgrade failed: {err_out}"
     except Exception as e:
-        return False, f"Lỗi khi nâng cấp guard: {str(e)}"
+        return False, f"Error upgrading guard: {str(e)}"

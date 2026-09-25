@@ -424,8 +424,8 @@ def hook_status_cmd(
     table.add_row("Git Repository", "✅ Yes" if status["is_git_repo"] else "❌ No", "Git VCS")
     table.add_row("Git pre-commit", "✅ Active" if status["pre_commit_installed"] else "⚪ Inactive", ".git/hooks/pre-commit")
     table.add_row("Git prepare-commit-msg", "✅ Active" if status["prepare_commit_msg_installed"] else "⚪ Inactive", ".git/hooks/prepare-commit-msg")
-    table.add_row("CLAUDE.md Directive", "✅ Active" if status["claude_md_active"] else "⚪ Inactive", "Tự động cho omp & Claude Code")
-    table.add_row("AGENT.md Directive", "✅ Active" if status["agent_md_active"] else "⚪ Inactive", "Tự động cho Cursor, Windsurf, Aider")
+    table.add_row("CLAUDE.md Directive", "✅ Active" if status["claude_md_active"] else "⚪ Inactive", "Directives for omp & Claude Code")
+    table.add_row("AGENT.md Directive", "✅ Active" if status["agent_md_active"] else "⚪ Inactive", "Directives for Cursor, Windsurf, Aider")
     table.add_row("Agent Wrapper (.guard/bin)", "✅ Active" if status["agent_wrapper_installed"] else "⚪ Inactive", ".guard/bin/guard-exec")
 
     console.print(table)
@@ -504,14 +504,14 @@ def update_cmd(
         return
 
     # Default target: ocr
-    console.print(f"[cyan]Kiểm tra bản cập nhật cho Alibaba OCR (@alibaba-group/open-code-review)...[/cyan]")
+    console.print(f"[cyan]Checking updates for Alibaba OCR (@alibaba-group/open-code-review)...[/cyan]")
     check_res = check_ocr_update(quarantine_days=quarantine_days)
 
     if check_only:
-        console.print(f"Phiên bản cài đặt: {check_res.installed_version or '(chưa cài)'}")
-        console.print(f"Phiên bản mới nhất: v{check_res.latest_version or 'N/A'}")
-        console.print(f"Trạng thái: [bold]{check_res.status.value}[/bold]")
-        console.print(f"Khuyến nghị: {check_res.recommendation}")
+        console.print(f"Installed Version: {check_res.installed_version or '(none)'}")
+        console.print(f"Latest Version: v{check_res.latest_version or 'N/A'}")
+        console.print(f"Security Status: [bold]{check_res.status.value}[/bold]")
+        console.print(f"Recommendation: {check_res.recommendation}")
         return
 
     success, msg = perform_ocr_upgrade(force=force, quarantine_days=quarantine_days)
@@ -519,7 +519,7 @@ def update_cmd(
         console.print(f"[bold green]{msg}[/bold green]")
     else:
         console.print(f"[bold yellow]{msg}[/bold yellow]")
-        if not force and "CÁCH LY" in msg:
+        if not force and "QUARANTINE" in msg:
             raise typer.Exit(code=1)
 
 
@@ -595,8 +595,8 @@ def doctor_cmd(
 
     # 2. Supply-Chain Security & Update Quarantine Table (Focused on Alibaba OCR)
     if check_updates:
-        console.print(f"\n[bold yellow]🛡️  SUPPLY-CHAIN SECURITY: ALIBABA OCR (Chính sách cách ly {quarantine_days:.0f} ngày)[/bold yellow]")
-        with console.status("[cyan]Đang kiểm tra npm registry cho Alibaba OCR...[/cyan]"):
+        console.print(f"\n[bold yellow]🛡️  SUPPLY-CHAIN SECURITY: ALIBABA OCR (Quarantine Policy: {quarantine_days:.0f} days)[/bold yellow]")
+        with console.status("[cyan]Checking npm registry for Alibaba OCR...[/cyan]"):
             ocr_check = check_ocr_update(quarantine_days=quarantine_days)
 
         sec_table = Table(show_header=True, header_style="bold cyan")
@@ -604,9 +604,9 @@ def doctor_cmd(
         sec_table.add_column("Installed", width=12)
         sec_table.add_column("Latest (Registry)", width=18)
         sec_table.add_column("Security Status", justify="center", width=22)
-        sec_table.add_column("Khuyến nghị & Hành động")
+        sec_table.add_column("Recommendation & Action")
 
-        inst_str = ocr_check.installed_version or "(chưa cài)"
+        inst_str = ocr_check.installed_version or "(not installed)"
         latest_str = f"v{ocr_check.latest_version}" if ocr_check.latest_version else "N/A"
         if ocr_check.age_days is not None:
             latest_str += f" ({ocr_check.age_days:.1f}d)"
@@ -626,8 +626,8 @@ def doctor_cmd(
 
         console.print(sec_table)
         console.print(
-            f"[dim]💡 Nguyên tắc an toàn: Bản cập nhật Alibaba OCR mới phát hành < {quarantine_days:.0f} ngày sẽ tự động bị đưa "
-            "vào diện CÁCH LY BẢO MẬT để phòng ngừa backdoor & tấn công chuỗi cung ứng npm (Supply-chain attacks).[/dim]\n"
+            f"[dim]💡 Safety principle: Newly published Alibaba OCR releases < {quarantine_days:.0f} days are automatically placed "
+            "on QUARANTINE HOLD to protect against npm supply-chain backdoors.[/dim]\n"
         )
 
 

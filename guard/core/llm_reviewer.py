@@ -98,7 +98,6 @@ class LLMReviewerEngine:
                 if llm_verdict:
                     return llm_verdict
             except Exception:
-                # Graceful fallback to heuristic verdict on network or API failure
                 pass
 
         return heuristic_verdict
@@ -118,17 +117,17 @@ class LLMReviewerEngine:
         # Check 1: Build check
         if build_check:
             if build_check.passed:
-                tech_notes.append(f"Compile Check: PASSED ({build_check.command} executed in {build_check.duration_s:.1f}s)")
+                tech_notes.append(f"Compile Check: PASSED (`{build_check.command}` in {build_check.duration_s:.1f}s)")
             else:
                 score -= 4.5
                 tech_notes.append(f"Compile Check: FAILED with exit code {build_check.exit_code}")
-                remediation.append(f"Sửa lỗi biên dịch gây fail lệnh `{build_check.command}`:\n{build_check.output[:300]}")
+                remediation.append(f"Fix compilation errors causing `{build_check.command}` to fail:\n{build_check.output[:300]}")
 
         # Check 2: Out of scope files
         if diff_summary and diff_summary.out_of_scope_files:
             score -= 2.5 * len(diff_summary.out_of_scope_files)
-            tech_notes.append(f"Scope Compliance: Vi phạm {len(diff_summary.out_of_scope_files)} file ngoài dự kiến: {', '.join(diff_summary.out_of_scope_files)}")
-            remediation.append(f"Loại bỏ các thay đổi không thuộc phạm vi Pre-Task tại: {', '.join(diff_summary.out_of_scope_files)}")
+            tech_notes.append(f"Scope Compliance: Modified {len(diff_summary.out_of_scope_files)} undeclared files: {', '.join(diff_summary.out_of_scope_files)}")
+            remediation.append(f"Revert changes to out-of-scope files: {', '.join(diff_summary.out_of_scope_files)}")
 
         # Check 3: Rule Violations
         crit_violations = [v for v in violations if v.severity == "CRITICAL"]
@@ -137,25 +136,25 @@ class LLMReviewerEngine:
             score -= 3.5 * len(crit_violations)
             for cv in crit_violations:
                 tech_notes.append(f"Security Alert [{cv.rule_id}]: {cv.message} ({cv.file_path})")
-                remediation.append(f"Khắc phục vi phạm bảo mật nghiêm trọng {cv.rule_id} trong `{cv.file_path}`")
+                remediation.append(f"Resolve critical security violation {cv.rule_id} in `{cv.file_path}`")
         if high_violations:
             score -= 1.5 * len(high_violations)
             for hv in high_violations:
                 tech_notes.append(f"Stability Warning [{hv.rule_id}]: {hv.message} ({hv.file_path})")
-                remediation.append(f"Khắc phục cảnh báo hiệu năng/ổn định {hv.rule_id} trong `{hv.file_path}`")
+                remediation.append(f"Resolve stability/performance warning {hv.rule_id} in `{hv.file_path}`")
 
         # Check 4: Invariants (CRITICAL: Invariant violation is a HARD BLOCKER)
         invariant_violated = False
         if invariant_result:
             if invariant_result.all_passed:
-                ux_notes.append("Invariants Check: 100% Invariants được bảo toàn nguyên vẹn.")
+                ux_notes.append("Invariants Check: 100% Invariants strictly preserved.")
             else:
                 invariant_violated = True
                 failed_checks = [c for c in invariant_result.checks if not c.passed]
                 score -= 3.0 * len(failed_checks)
                 for fc in failed_checks:
                     ux_notes.append(f"Invariant Violation [{fc.id}]: {fc.description} -> {fc.notes}")
-                    remediation.append(f"Khôi phục hành vi bất biến `{fc.id}`: {fc.description}")
+                    remediation.append(f"Restore invariant behavior `{fc.id}`: {fc.description}")
 
         score = max(0.0, min(10.0, score))
         
@@ -163,9 +162,9 @@ class LLMReviewerEngine:
         verdict = ReviewVerdict.APPROVED if (score >= 7.5 and not is_hard_blocked) else ReviewVerdict.REVISE
 
         summary = (
-            f"LLM GATE APPROVAL: Mã nguồn đạt chuẩn an toàn ({score:.1f}/10). Không phát hiện hồi quy hay vi phạm kiến trúc."
+            f"LLM GATE APPROVAL: Source code meets safety standards ({score:.1f}/10). No regressions or architectural violations detected."
             if verdict == ReviewVerdict.APPROVED
-            else f"LLM GATE REJECT: Phát hiện {len(remediation)} điểm cần sửa chữa trước khi bàn giao ({score:.1f}/10)."
+            else f"LLM GATE REJECT: Detected {len(remediation)} issues to fix before handover ({score:.1f}/10)."
         )
 
         model_name = self.config.llm.model if (self.config and self.config.llm and self.config.llm.api_key) else "Local Rule Engine"
@@ -198,19 +197,19 @@ class LLMReviewerEngine:
         domain_str = domain.value if hasattr(domain, "value") else str(domain)
 
         system_prompt = (
-            f"Bạn là Senior Lead Architect và Code Reviewer chốt chặn cuối cùng (sử dụng model {model_name}).\n"
-            "Nhiệm vụ của bạn là thẩm định báo cáo Post-task và git diff của lập trình viên AI.\n"
-            "Hãy đánh giá theo 3 trụ cột:\n"
-            "1. Technical Audit (Toàn vẹn mã nguồn, memory leaks, listener mồ côi, breaking API, bảo mật)\n"
-            "2. Invariants & Contracts (Có giữ đúng hợp đồng UI/UX, states, DB schemas không)\n"
-            "3. Ergonomics Polish (Công thái học, trải nghiệm người dùng theo domain)\n"
-            "Định dạng phản hồi bắt buộc gồm:\n"
-            "SCORE: <điểm từ 0.0 đến 10.0>\n"
-            "VERDICT: <APPROVED hoặc REVISE>\n"
-            "SUMMARY: <tóm tắt ngắn gọn>\n"
-            "TECHNICAL: <các gạch đầu dòng>\n"
-            "ERGONOMICS: <các gạch đầu dòng>\n"
-            "REMEDIATION: <các gạch đầu dòng sửa lỗi nếu REVISE, hoặc 'None' nếu APPROVED>"
+            f"You are the Senior Lead Architect and Code Reviewer acting as the final safety gate (using model {model_name}).\n"
+            "Your task is to audit the post-task verification report and git diff produced by an AI coding agent.\n"
+            "Evaluate across 3 pillars:\n"
+            "1. Technical Audit (Code integrity, memory leaks, dangling listeners, breaking API changes, security vulnerabilities)\n"
+            "2. Invariants & Contracts (Ensure baseline UI states, interactions, and DB schemas are preserved)\n"
+            "3. Ergonomics Polish (UX, responsive styling, accessibility across technical domains)\n"
+            "Mandatory Output Format:\n"
+            "SCORE: <float between 0.0 and 10.0>\n"
+            "VERDICT: <APPROVED or REVISE>\n"
+            "SUMMARY: <concise summary>\n"
+            "TECHNICAL: <bullet points>\n"
+            "ERGONOMICS: <bullet points>\n"
+            "REMEDIATION: <bullet points of required fixes if REVISE, or 'None' if APPROVED>"
         )
 
         user_content = f"""
