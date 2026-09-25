@@ -248,13 +248,37 @@ def test_invariant_failing_before_task_warns_but_does_not_block(tmp_path):
     assert check.status == "baseline_failed"
 
 
-def test_hook_skips_after_approved_session(tmp_path):
+def test_hook_approval_covers_only_the_approved_changes(tmp_path):
     repo = make_repo(tmp_path)
     assert execute_pre_task("Fix src/other.ts", repo_path=repo) is True
     (repo / "src" / "other.ts").write_text("export const x = 5;\n", encoding="utf-8")
     assert execute_post_task(repo_path=repo) is True
-    (repo / "src" / "chat.ts").write_text("// later unrelated work\n", encoding="utf-8")
+    # Committing exactly the approved change passes without re-running the gate
     assert execute_post_task(repo_path=repo, hook=True) is True
+
+    # Work edited after the approval (or unrelated to it) is not covered
+    (repo / "src" / "chat.ts").write_text("// later unrelated work\n", encoding="utf-8")
+    assert execute_post_task(repo_path=repo, hook=True) is False
+    (repo / "src" / "chat.ts").write_text("export function send() { return fetch('/api'); }\n", encoding="utf-8")
+    (repo / "src" / "other.ts").write_text("export const x = 6;\n", encoding="utf-8")
+    assert execute_post_task(repo_path=repo, hook=True) is False
+
+
+def test_reset_archives_and_closes_a_rejected_session(tmp_path):
+    from typer.testing import CliRunner
+    from guard.cli import app
+
+    repo = make_repo(tmp_path)
+    assert execute_pre_task("Fix src/chat.ts", repo_path=repo) is True
+    (repo / "src" / "other.ts").write_text("export const x = 2;\n", encoding="utf-8")
+    assert execute_post_task(repo_path=repo) is False
+    session_id = SessionManager(repo).load_local_session().session_id
+
+    result = CliRunner().invoke(app, ["reset", "--repo", str(repo)])
+    assert result.exit_code == 0
+    assert SessionManager(repo).load_local_session() is None
+    assert (repo / ".guard" / "history" / f"{session_id}.json").is_file()
+    assert execute_post_task(repo_path=repo, hook=True) is True  # no session any more
 
 
 def test_prompt_globs_do_not_widen_scope(tmp_path):

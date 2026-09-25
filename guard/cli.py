@@ -256,10 +256,27 @@ def execute_post_task(
     session_mgr = SessionManager(target_repo)
     # In a git hook only this repo's own session counts; never adopt another repo's session.
     session = session_mgr.load_local_session() if hook else session_mgr.load_session()
-    if hook and (session is None or session.status == SessionStatus.COMPLETED):
-        reason = "no guard session in this repository" if session is None else "last guard session was approved"
-        console.print(f"[dim]Laya-OCR-Guard: {reason}, skipping.[/dim]")
+    if hook and session is None:
+        console.print("[dim]Laya-OCR-Guard: no guard session in this repository, skipping.[/dim]")
         return True
+    if hook and session.status == SessionStatus.COMPLETED:
+        # An approval covers only the exact file contents it approved, not later or unrelated work
+        approved = session.post.approved_fingerprints if session.post else {}
+        uncovered = [
+            f for f in GitDiffInspector(target_repo).get_working_files()
+            if approved.get(f) != _fingerprint(target_repo / f)
+        ]
+        if not uncovered:
+            console.print("[dim]Laya-OCR-Guard: changes match the last approved guard session, skipping.[/dim]")
+            return True
+        listing = "\n".join(f"  • {f}" for f in uncovered[:20])
+        console.print(
+            f"[bold red]❌ {len(uncovered)} changed file(s) are not covered by the last approved guard session "
+            f"({session.session_id}):[/bold red]\n{listing}\n"
+            "Run [bold]guard pre \"<task>\"[/bold] before editing and [bold]guard post[/bold] after, or "
+            "[bold]guard reset[/bold] to stop guarding this work."
+        )
+        return False
 
     pre = session.pre if session else None
     expected_files = pre.expected_files if pre else []
@@ -427,6 +444,9 @@ def execute_post_task(
         scope_declared=scope_declared,
         preexisting_files=preexisting_files,
         deleted_files=deleted_files,
+        approved_fingerprints=(
+            {f.path: _fingerprint(target_repo / f.path) for f in diff_summary.files} if all_passed else {}
+        ),
     )
 
     session_mgr.complete_post_session(post_rec)
@@ -492,6 +512,27 @@ def post_cmd(
     passed = execute_post_task(repo_path=Path(repo) if repo else None, auto_fix=auto_fix, focus=focus, hook=hook)
     if not passed:
         raise typer.Exit(code=1)
+
+
+@app.command("reset")
+def reset_cmd(
+    repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
+):
+    """
+    Close the current guard session (e.g. after its work was committed or abandoned).
+    The session is archived under .guard/history/ so the decision stays auditable.
+    """
+    target_repo = Path(repo).resolve() if repo else Path.cwd().resolve()
+    mgr = SessionManager(target_repo)
+    session = mgr.load_local_session()
+    if session is None:
+        console.print("[yellow]No guard session in this repository.[/yellow]")
+        return
+    archived = mgr.archive_and_clear()
+    console.print(
+        f"[bold yellow]Guard session {session.session_id} ({session.status.value}) closed.[/bold yellow] "
+        f"Archived to {archived}."
+    )
 
 
 @app.command("run")

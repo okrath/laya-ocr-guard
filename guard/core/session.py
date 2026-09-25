@@ -93,6 +93,8 @@ class PostTaskRecord(BaseModel):
     scope_declared: bool = True
     preexisting_files: List[str] = Field(default_factory=list)
     deleted_files: List[str] = Field(default_factory=list)
+    # Content fingerprints of every changed file when APPROVED: the approval covers exactly these
+    approved_fingerprints: Dict[str, str] = Field(default_factory=dict)
 
 
 class GuardSession(BaseModel):
@@ -275,6 +277,18 @@ class SessionManager:
         session.post = post_rec
         self._save(session)
         return session
+
+    def archive_and_clear(self) -> Optional[Path]:
+        """Move the current session to .guard/history/<session_id>.json, then clear it."""
+        session = self.load_local_session()
+        archived = None
+        if session:
+            history = self.guard_dir / "history"
+            history.mkdir(parents=True, exist_ok=True)
+            archived = history / f"{session.session_id}.json"
+            archived.write_text(session.model_dump_json(indent=2), encoding="utf-8")
+        self.clear()
+        return archived
 
     def clear(self):
         if self.session_file.exists():

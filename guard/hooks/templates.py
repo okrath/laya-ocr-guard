@@ -25,7 +25,7 @@ GIT_PRE_COMMIT_HOOK = """#!/usr/bin/env sh
   exit 0
 fi
 echo "🛡️  Running Laya-OCR-Guard Pre-Commit Check..."
-# --hook: repositories without an open or rejected guard session are skipped instead of blocked
+# --hook: skipped without a guard session, or when the changes are exactly what was last approved
 guard post --hook
 STATUS=$?
 if [ $STATUS -ne 0 ]; then
