@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from guard.cli import execute_post_task, execute_pre_task
 from guard.core.config import GuardConfig, LLMConfig
-from guard.core.laya_engine import DomainType, LayaEngine
+from guard.core.invariant_eval import DomainType, evaluate_invariants
 from guard.core.llm_reviewer import LLMReviewerEngine
 from guard.core.ocr_engine import GitDiffInspector, OCRRulebookRunner
 from guard.core.session import SessionManager
@@ -120,7 +120,7 @@ def test_project_invariants_replace_templates_and_are_really_checked(tmp_path):
 
 
 def test_template_invariants_without_heuristic_are_unverified():
-    res = LayaEngine().evaluate_invariants(
+    res = evaluate_invariants(
         [{"id": "INFRA-INV-02", "description": "Do not bind database ports to 0.0.0.0/0."}], git_diff="+x", files_changed=[])
     assert res.checks[0].status == "unverified"
     assert res.unverified_count == 1
@@ -349,11 +349,10 @@ def test_new_invariants_file_is_self_checked_on_post(tmp_path):
 
 def test_escape_heuristic_ignores_identifiers_named_escape():
     inv = [{"id": "FE-INV-02", "description": "Keep Escape and Enter keyboard navigation working."}]
-    engine = LayaEngine()
-    ident = engine.evaluate_invariants(inv, "-function formatInline(escapedText: string) {\n-  return escapeHtml(x);\n", [])
+    ident = evaluate_invariants(inv, "-function formatInline(escapedText: string) {\n-  return escapeHtml(x);\n", [])
     assert ident.checks[0].status == "passed"
     for removed in ["-  if (e.key === 'Escape') close();", "-  window.addEventListener('keydown', onKey);"]:
-        assert engine.evaluate_invariants(inv, removed, []).checks[0].status == "failed"
+        assert evaluate_invariants(inv, removed, []).checks[0].status == "failed"
 
 
 def test_removed_symbols_still_referenced_are_reported(tmp_path):
@@ -372,6 +371,19 @@ def test_removed_symbols_still_referenced_are_reported(tmp_path):
     post = SessionManager(repo).load_local_session().post
     dead_refs = [v.message for v in post.rule_violations if v.rule_id == "DEAD-REF"]
     assert len(dead_refs) == 1 and "`edit`" in dead_refs[0] and "src/use.ts:1" in dead_refs[0]
+
+
+def test_restart_keeps_the_rules_locked_at_the_first_pre(tmp_path):
+    repo = make_repo(tmp_path)
+    write_invariants(repo)
+    assert execute_pre_task("Fix src/chat.ts", repo_path=repo) is True
+    # The task edits the rulebook to drop a rule, then restarts to re-lock from the edited file
+    (repo / "guard.invariants.json").write_text(json.dumps({"invariants": [
+        {"id": "CHAT-02", "description": "send() stays exported",
+         "checks": [{"files": "src/chat.ts", "require": "export function send"}]}]}), encoding="utf-8")
+    assert execute_pre_task("Fix src/chat.ts", repo_path=repo, force=True) is True
+    locked = [i.id for i in SessionManager(repo).load_local_session().pre.locked_invariants]
+    assert locked == ["CHAT-01", "CHAT-02", "UX-01"]
 
 
 def test_build_info_names_the_script_that_ran():

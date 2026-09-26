@@ -1,8 +1,8 @@
 """
-Complete CLI for Laya-OCR-Guard (`guard`).
+Complete CLI for Banh-Mi-Guard (`guard`).
 Provides:
 - `guard pre "<prompt>"`: Triage, Baseline Contracts, Invariants, Pre-task Note
-- `guard post [--auto-fix] [--focus]`: Diff Audit, Build Check, OCR Rules, Laya Invariants, LLM Final Gate Verdict
+- `guard post [--auto-fix] [--focus]`: Diff Audit, Build Check, OCR Rules, Invariants, LLM Final Gate Verdict
 - `guard config` [show | llm | test | sync]: Manage LLM and OCR credentials
 - `guard hook` [install | uninstall | status]: Bind hooks and AI Agent directives to target repos
 - `guard run "<prompt>" -- <cmd>`: Sandwich pattern wrapper
@@ -31,7 +31,7 @@ from rich.table import Table
 
 from guard import __app_name__, __version__
 from guard.core.config import get_global_config_path, get_local_config_path, load_config, print_config_table
-from guard.core.laya_engine import DomainType, LayaEngine
+from guard.core.invariant_eval import DomainType, evaluate_invariants
 from guard.core.hygiene_engine import HygieneEngine
 from guard.core.llm_reviewer import LLMReviewerEngine, ReviewVerdict
 from guard.core.ocr_engine import GitDiffInspector, OCRRulebookRunner, RuleViolation
@@ -82,7 +82,7 @@ from guard.reporters.terminal import render_post_task_terminal, render_pre_task_
 
 app = typer.Typer(
     name=__app_name__,
-    help="🛡️ Laya-OCR-Guard: Dual-gate impact analysis & regression guard for AI-assisted development",
+    help="🛡️ Banh-Mi-Guard: Dual-gate impact analysis & regression guard for AI-assisted development",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -169,7 +169,6 @@ def execute_pre_task(
     for msg in ensure_repo_setup(target_repo):
         console.print(f"[cyan]🔧 guard setup: {msg}[/cyan]")
     config = load_config(target_repo)
-    laya = LayaEngine(model_name=config.laya.model_name, device=config.laya.device)
     session_mgr = SessionManager(target_repo)
 
     # 0. A pre-task gate that can be re-run after editing would let scope be declared retroactively.
@@ -226,11 +225,8 @@ def execute_pre_task(
         late_scope = []
         restarts = []
 
-    # 1. Domain comes from the repository itself; the prompt-based triage is only a hint.
+    # 1. Domain comes from the repository itself
     domain = detect_domain(target_repo)
-
-    # 2. Laya System 1 Triage (<30ms)
-    triage = laya.triage(prompt=prompt, context_files=candidate_files)
 
     # 3. Domain Contracts & Invariants Extraction
     try:
@@ -243,7 +239,7 @@ def execute_pre_task(
     except InvariantsFileError as e:
         console.print(f"[bold red]❌ {e}[/bold red]\nFix guard.invariants.json before starting the task.")
         return False
-    baseline_eval = laya.evaluate_invariants(
+    baseline_eval = evaluate_invariants(
         invariants=[inv.model_dump() for inv in invariants],
         git_diff="",
         files_changed=[],
@@ -253,12 +249,14 @@ def execute_pre_task(
     checked = {inv.id for inv in invariants if inv.checks}
     baseline_status = {c.id: c.status for c in baseline_eval.checks if c.id in checked}
     if superseded:
+        # A restart keeps the rules locked at the first pre: re-locking from a rulebook edited in the
+        # meantime would let the task choose the rules it is judged by
         baseline_status = dict(superseded.pre.baseline_invariant_status)
+        invariants = list(superseded.pre.locked_invariants)
 
     # 4. Save Session
     session = session_mgr.start_pre_session(
         prompt=prompt,
-        triage=triage,
         expected_files=candidate_files,
         contracts=contracts,
         invariants=invariants,
@@ -299,7 +297,7 @@ def execute_post_task(
     # In a git hook only this repo's own session counts; never adopt another repo's session.
     session = session_mgr.load_local_session() if hook else session_mgr.load_session()
     if hook and session is None:
-        console.print("[dim]Laya-OCR-Guard: no guard session in this repository, skipping.[/dim]")
+        console.print("[dim]Banh-Mi-Guard: no guard session in this repository, skipping.[/dim]")
         return True
     if hook and session.status == SessionStatus.COMPLETED:
         # An approval covers only the exact file contents it approved, not later or unrelated work
@@ -309,7 +307,7 @@ def execute_post_task(
             if approved.get(f) != _fingerprint(target_repo / f)
         ]
         if not uncovered:
-            console.print("[dim]Laya-OCR-Guard: changes match the last approved guard session, skipping.[/dim]")
+            console.print("[dim]Banh-Mi-Guard: changes match the last approved guard session, skipping.[/dim]")
             return True
         listing = "\n".join(f"  • {f}" for f in uncovered[:20])
         console.print(
@@ -393,6 +391,8 @@ def execute_post_task(
     evidence = [removal_summary] if removal_summary else []
 
     # Weakening the rulebook is never a side effect: a removed or relaxed invariant blocks
+    rulebook_retired: set = set()
+    rulebook_redefined: dict = {}
     if pre and any(f.path == INVARIANTS_FILENAME for f in diff_summary.files):
         base_text = _file_at(target_repo, pre.baseline_snapshot or pre.base_ref, INVARIANTS_FILENAME)
         if base_text:
@@ -402,11 +402,20 @@ def execute_post_task(
             except (ValueError, AttributeError, InvariantsFileError):
                 old_items, new_items = [], []
             declared = scope_declared and diff_inspector._is_expected(INVARIANTS_FILENAME, expected_files)
+            if declared:
+                # An explicit, scoped rulebook edit: judge the locked rules by what the task decided
+                new_by_id = {str(i["id"]): i for i in new_items}
+                for old in old_items:
+                    oid = str(old["id"])
+                    if oid not in new_by_id:
+                        rulebook_retired.add(oid)
+                    elif (old.get("checks") or []) != (new_by_id[oid].get("checks") or []):
+                        rulebook_redefined[oid] = new_by_id[oid].get("checks") or []
             for note in removed_or_relaxed(old_items, new_items):
                 violations.append(RuleViolation(
                     rule_id="INV-WEAKENED",
-                    # An explicitly scoped rulebook edit is reviewed; a silent one blocks
-                    severity="HIGH" if declared else "CRITICAL",
+                    # An explicitly scoped rulebook edit is reported to the reviewer; a silent one blocks
+                    severity="MEDIUM" if declared else "CRITICAL",
                     file_path=INVARIANTS_FILENAME,
                     message=f"Invariant {note}. Removing or relaxing a project invariant needs an explicit task and review.",
                 ))
@@ -463,8 +472,7 @@ def execute_post_task(
             )
 
     # 4. Invariants: project checks run on current files; template invariants only get diff heuristics
-    laya = LayaEngine(model_name=config.laya.model_name, device=config.laya.device)
-    inv_eval = laya.evaluate_invariants(
+    inv_eval = evaluate_invariants(
         invariants=invariants_dicts,
         git_diff=task_diff,
         files_changed=[f.path for f in diff_summary.files],
@@ -477,6 +485,14 @@ def execute_post_task(
             c.status = "baseline_failed"
             c.passed = True
             c.notes += " (already failing before this task)"
+    for c in inv_eval.checks:
+        if c.id in rulebook_retired:
+            c.status, c.passed = "retired", True
+            c.notes = f"retired by this task's declared edit of {INVARIANTS_FILENAME} (reported as INV-WEAKENED for review)"
+        elif c.id in rulebook_redefined:
+            status, note = evaluate_checks(target_repo, rulebook_redefined[c.id])
+            c.status, c.passed = status, status != "failed"
+            c.notes = f"re-evaluated with the definition changed by this task: {note}"
 
     # A new or edited guard.invariants.json is not locked by this session, so self-check it on the
     # current tree: a rule that fails on the code it was written for is a broken rule.
@@ -486,7 +502,7 @@ def execute_post_task(
         except InvariantsFileError as e:
             violations.append(RuleViolation(rule_id="INV-FILE", severity="CRITICAL", file_path=INVARIANTS_FILENAME, message=str(e)))
         else:
-            self_check = laya.evaluate_invariants(
+            self_check = evaluate_invariants(
                 invariants=[{"id": i["id"], "description": i["description"], "checks": i.get("checks") or []} for i in new_items],
                 git_diff="",
                 files_changed=[],
@@ -581,13 +597,13 @@ def execute_post_task(
 def pre_cmd(
     prompt: str = typer.Argument(..., help="Prompt or task about to be executed by developer/agent"),
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
-    quick: bool = typer.Option(False, "--quick", "-q", help="Quick mode (local triage only)"),
+    quick: bool = typer.Option(False, "--quick", "-q", help="Accepted for compatibility; has no effect"),
     scope: Optional[List[str]] = typer.Option(None, "--scope", "-s", help="Allowed file/dir/glob (repeatable), e.g. --scope 'src/ui/**'"),
     allow_dirty: bool = typer.Option(False, "--allow-dirty", help="Start even though files are already modified (recorded as pre-existing baseline)"),
     force: bool = typer.Option(False, "--force", help="Restart an unfinished or rejected session (inherits its baseline and scope)"),
 ):
     """
-    Run Pre-Task Guard BEFORE editing: triage, scope declaration, baseline contracts & invariants.
+    Run Pre-Task Guard BEFORE editing: scope declaration, baseline contracts & invariants.
     """
     success = execute_pre_task(
         prompt=prompt,
@@ -729,7 +745,7 @@ def invariants_check_cmd(
 # Subcommand: guard config
 config_app = typer.Typer(
     name="config",
-    help="⚙️ Manage Guard configuration (LLM, Alibaba OCR, Laya)",
+    help="⚙️ Manage Guard configuration (LLM, Alibaba OCR)",
     no_args_is_help=False,
 )
 app.add_typer(config_app, name="config")
@@ -1018,7 +1034,7 @@ def hook_install_cmd(
     else:
         # Interactive selection if terminal is interactive
         if sys.stdin and sys.stdin.isatty():
-            console.print("\n[bold cyan]🛡️  Laya-OCR-Guard Installation Setup[/bold cyan]")
+            console.print("\n[bold cyan]🛡️  Banh-Mi-Guard Installation Setup[/bold cyan]")
             console.print("Choose how you want Guard to protect this workspace:\n")
             console.print("  [bold green][1] 👻 Stealth Mode (Git Hooks Only - Recommended for company/shared repos)[/bold green]")
             console.print("      • Installs local .git/hooks/pre-commit gate")
@@ -1194,7 +1210,7 @@ def review_cmd(
 
 @app.command("update")
 def update_cmd(
-    target: str = typer.Argument("ocr", help="Update target: 'ocr' (Alibaba OCR) or 'self' (Laya-OCR-Guard)"),
+    target: str = typer.Argument("ocr", help="Update target: 'ocr' (Alibaba OCR) or 'self' (Banh-Mi-Guard)"),
     check_only: bool = typer.Option(False, "--check", "-c", help="Check for available updates without installing"),
     force: bool = typer.Option(False, "--force", "-f", help="Bypass the 3-day supply-chain quarantine cooling period"),
     quarantine_days: float = typer.Option(3.0, "--quarantine-days", "-q", help="Quarantine cooling period in days"),
@@ -1204,14 +1220,14 @@ def update_cmd(
     """
     if target.lower() in ["self", "guard"]:
         if check_only:
-            console.print("[cyan]Checking for Laya-OCR-Guard updates on GitHub...[/cyan]")
+            console.print("[cyan]Checking for Banh-Mi-Guard updates on GitHub...[/cyan]")
             check_res = check_guard_self_update(force=True)
             console.print(f"Installed Version: v{check_res.installed_version}")
             console.print(f"Latest Version:    v{check_res.latest_version or 'N/A'}")
             console.print(f"Status:            [bold]{check_res.status.value}[/bold]")
             console.print(f"Recommendation:    {check_res.recommendation}")
             return
-        console.print("[cyan]Upgrading Laya-OCR-Guard CLI from GitHub...[/cyan]")
+        console.print("[cyan]Upgrading Banh-Mi-Guard CLI from GitHub...[/cyan]")
         success, msg = perform_self_upgrade()
         if success:
             console.print(f"[bold green]{msg}[/bold green]")
@@ -1249,7 +1265,7 @@ def doctor_cmd(
     """
     Check system health and audit Alibaba OCR supply-chain security updates.
     """
-    console.print("[bold cyan]🩺 LAYA-OCR-GUARD SYSTEM DOCTOR[/bold cyan]\n")
+    console.print("[bold cyan]🩺 BANH-MI-GUARD SYSTEM DOCTOR[/bold cyan]\n")
     
     # 1. Environment Table
     table = Table(title="💻 System Environment & Engines", show_header=True, header_style="bold magenta")
@@ -1258,7 +1274,7 @@ def doctor_cmd(
     table.add_column("Version / Details")
 
     # Guard CLI itself
-    table.add_row("Laya-OCR-Guard CLI", "✅ Active", f"v{__version__} (github.com/okrath/laya-ocr-guard)")
+    table.add_row("Banh-Mi-Guard CLI", "✅ Active", f"v{__version__} (github.com/okrath/banh-mi-guard)")
 
     # Python
     py_ver = sys.version.split()[0]
@@ -1305,14 +1321,6 @@ def doctor_cmd(
     else:
         table.add_row("Alibaba OCR CLI", "ℹ️ Optional", "Run 'npm install -g @alibaba-group/open-code-review'")
 
-    # Laya Engine
-    from guard.core.laya_onnx import is_model_installed, get_model_path
-    cfg = load_config()
-    if is_model_installed(cfg.laya.model_name):
-        sz_mb = get_model_path(cfg.laya.model_name).stat().st_size / (1024 * 1024)
-        table.add_row("Laya Neural Engine", "✅ Active", f"Embedded ONNX ({cfg.laya.model_name}, {sz_mb:.1f} MB) on {cfg.laya.device.upper()}")
-    else:
-        table.add_row("Laya Neural Engine", "⚡ Ready", f"Assets OK. Run 'guard laya download' to cache {cfg.laya.model_name}")
     console.print(table)
 
     # Installation & repository setup: what is missing after installing/upgrading, and how to fix it
@@ -1335,7 +1343,7 @@ def doctor_cmd(
         sec_table.add_column("Status", justify="center", width=22)
         sec_table.add_column("Recommendation & Action")
 
-        # Row 1: Laya-OCR-Guard
+        # Row 1: Banh-Mi-Guard
         g_inst = f"v{guard_check.installed_version}" if guard_check.installed_version else "v" + __version__
         g_latest = f"v{guard_check.latest_version}" if guard_check.latest_version else "N/A"
         if guard_check.status == UpdateSecurityStatus.SAFE_UPDATE_AVAILABLE:
@@ -1371,161 +1379,16 @@ def doctor_cmd(
             "on QUARANTINE HOLD to protect against npm supply-chain backdoors.[/dim]\n"
         )
 
-# ---------------------------------------------------------
-# Laya Neural Engine Subcommands
-# ---------------------------------------------------------
-
-laya_app = typer.Typer(
-    name="laya",
-    help="🧠 Manage Laya Neural Decision Engine (Embedded ONNX runtime)",
-    no_args_is_help=False,
-)
-app.add_typer(laya_app, name="laya")
-
-
-@laya_app.callback(invoke_without_command=True)
-def laya_main(ctx: typer.Context):
-    if ctx.invoked_subcommand is None:
-        laya_status_cmd()
-
-
-@laya_app.command("status")
-def laya_status_cmd():
-    """Show Laya ONNX Neural Engine status, model paths, and device support."""
-    from guard.core.laya_onnx import (
-        DEFAULT_MODEL,
-        get_assets_dir,
-        get_laya_model_dir,
-        get_model_path,
-        is_model_installed,
-    )
-    import onnxruntime as ort
-
-    cfg = load_config()
-    model_name = cfg.laya.model_name or DEFAULT_MODEL
-    installed = is_model_installed(model_name)
-    m_path = get_model_path(model_name)
-
-    table = Table(title="🧠 Laya ONNX Neural Engine Status", show_header=True, header_style="bold magenta")
-    table.add_column("Property", style="bold", width=24)
-    table.add_column("Value")
-
-    table.add_row("Configured Model", model_name)
-    table.add_row("Model Cache Dir", str(get_laya_model_dir()))
-    table.add_row("Model File Path", str(m_path))
-
-    if installed:
-        sz_mb = m_path.stat().st_size / (1024 * 1024)
-        table.add_row("Model Status", f"✅ Active ({sz_mb:.1f} MB cached)")
-    else:
-        table.add_row("Model Status", "⚡ Not yet downloaded (Run 'guard laya download')")
-
-    available_providers = ort.get_available_providers()
-    cuda_avail = "CUDAExecutionProvider" in available_providers
-    table.add_row("Hardware Acceleration", f"CUDA: {'✅ Available' if cuda_avail else '⚪ Inactive'}, CPU: ✅ Active")
-    table.add_row("Configured Device", cfg.laya.device.upper())
-
-    tok_file = get_assets_dir() / "tokenizer.json"
-    table.add_row("Embedded Tokenizer", "✅ Ready" if tok_file.exists() else "❌ Missing")
-
-    console.print(table)
-
-
-@laya_app.command("calibrate")
-def laya_calibrate_cmd(
-    model: str = typer.Option("laya-int8", "--model", "-m", help="Model checkpoint to calibrate"),
-):
-    """
-    Measure the installed Laya model on a labelled prompt set. Triage uses the neural model only
-    when this passes; otherwise it keeps the keyword reflex engine.
-    """
-    from guard.core.laya_calibration import LABELLED_PROMPTS, PASS_ACCURACY, calibrate
-    from guard.core.laya_onnx import get_model_path, is_model_installed
-
-    if not is_model_installed(model):
-        console.print(f"[yellow]Model {model} is not installed. Run `guard laya download` first.[/yellow]")
-        raise typer.Exit(code=2)
-    neural = LayaEngine(model_name=model, require_calibration=False)
-    reflex = LayaEngine(model_name=model, prefer_neural=False)
-    console.print(f"[cyan]Calibrating {model} on {len(LABELLED_PROMPTS)} labelled prompts...[/cyan]")
-    record = calibrate(get_model_path(model), lambda p: neural.triage(p).domain.value)
-    reflex_correct = sum(reflex.triage(p).domain.value == e for p, e in LABELLED_PROMPTS)
-    verdict = "[bold green]PASSED[/bold green]" if record["passed"] else "[bold red]FAILED[/bold red]"
+@app.command("laya", context_settings={"allow_extra_args": True, "ignore_unknown_options": True}, hidden=True)
+def laya_removed_cmd(ctx: typer.Context):
+    """Removed in 0.11: the Laya neural triage never influenced a gate decision."""
     console.print(
-        f"{verdict}: neural domain accuracy {record['correct']}/{record['total']} "
-        f"({record['accuracy']:.0%}, threshold {PASS_ACCURACY:.0%}); "
-        f"reflex engine on the same set: {reflex_correct}/{record['total']}."
-    )
-    if not record["passed"]:
-        console.print("[yellow]Triage keeps using the reflex engine until a model passes calibration.[/yellow]")
-
-
-@laya_app.command("download")
-def laya_download_cmd(
-    model: str = typer.Option("laya-int8", "--model", "-m", help="Model checkpoint: laya-int8 (554MB)"),
-    force: bool = typer.Option(False, "--force", "-f", help="Re-download model even if already cached"),
-):
-    """Download quantized Laya ONNX weights from HuggingFace."""
-    from guard.core.laya_onnx import (
-        download_laya_model,
-        get_model_path,
-        is_model_installed,
-    )
-    from rich.progress import BarColumn, DownloadColumn, Progress, TextColumn, TimeRemainingColumn, TransferSpeedColumn
-
-    norm_key = "laya-int8" if "int8" in model.lower() or "int4" not in model.lower() else "laya-int4"
-    if is_model_installed(norm_key) and not force:
-        console.print(f"[bold green]✅ Model '{norm_key}' is already downloaded at: {get_model_path(norm_key)}[/bold green]")
-        return
-
-    console.print(f"[bold cyan]📥 Downloading Laya ONNX ({norm_key}) from HuggingFace...[/bold cyan]")
-    progress = Progress(
-        TextColumn("[bold blue]{task.description}"),
-        BarColumn(),
-        DownloadColumn(),
-        TransferSpeedColumn(),
-        TimeRemainingColumn(),
-        console=console,
+        "[yellow]`guard laya` was removed in 0.11.[/yellow] The Laya triage (domain / intent / risk guesses) was only "
+        "displayed and never changed a gate decision, and the neural model scored at chance level. "
+        "The repository domain is detected from the repository itself.\n"
+        f"Downloaded model files are no longer used: delete {Path.home() / '.guard' / 'models'} to free the space."
     )
 
-    with progress:
-        task_id = progress.add_task(f"Downloading {norm_key}", total=100_000_000)
-
-        def cb(downloaded, total):
-            progress.update(task_id, completed=downloaded, total=total)
-
-        try:
-            dest = download_laya_model(model_name=norm_key, progress_callback=cb)
-            console.print(f"[bold green]✅ Successfully downloaded and verified Laya ONNX ({norm_key}) at:[/bold green] {dest}")
-        except Exception as e:
-            console.print(f"[bold red]❌ Download failed:[/bold red] {e}")
-            raise typer.Exit(1)
-
-
-@laya_app.command("triage")
-def laya_triage_cmd(
-    prompt: str = typer.Argument(..., help="Task prompt to triage"),
-):
-    """Run interactive Laya System 1 Triage on a prompt."""
-    cfg = load_config()
-    laya = LayaEngine(model_name=cfg.laya.model_name, device=cfg.laya.device)
-    res = laya.triage(prompt=prompt)
-
-    table = Table(title=f"🛡️ Laya Triage Result ({res.engine_mode})", show_header=True, header_style="bold cyan")
-    table.add_column("Metric", style="bold")
-    table.add_column("Value")
-
-    table.add_row("Prompt", prompt)
-    dom_val = str(res.domain.value) if hasattr(res.domain, "value") else str(res.domain)
-    table.add_row("Domain", f"[bold green]{dom_val.upper()}[/bold green]")
-    int_val = str(res.intent.value) if hasattr(res.intent, "value") else str(res.intent)
-    table.add_row("Intent", f"[bold yellow]{int_val.upper()}[/bold yellow]")
-    table.add_row("Risk Level", f"[bold]{res.risk_score_label}[/bold]")
-    table.add_row("Core Breach", "🚨 YES (High Risk Area)" if res.core_breach_risk else "✅ NO (Safe Scope)")
-    table.add_row("Engine Latency", f"{res.latency_ms:.2f} ms")
-    table.add_row("Reasoning", res.reasoning)
-
-    console.print(table)
 
 def _refresh_with_new_version() -> None:
     """

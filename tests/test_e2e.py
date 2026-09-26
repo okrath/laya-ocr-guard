@@ -1,5 +1,5 @@
 """
-End-to-End Integration Tests for Laya-OCR-Guard.
+End-to-End Integration Tests for Banh-Mi-Guard.
 Simulates real-world workflows across Frontend and Backend repositories:
 1. UI Regression detection (removing Escape key handler) -> REVISE
 2. Security & Out-of-Scope violation (hardcoded secret in undeclared file) -> REVISE
@@ -138,7 +138,7 @@ Comprehensive user guide and documentation.
 
 ## Features
 - Dual-Gate impact analysis & regression guard.
-- Fast intent and risk triage via Laya System 1.
+- Deterministic scope, invariant and build checks.
 - Blast radius measurement via Alibaba Open Code Review (OCR).
 - Final review and verification gate by configured LLM.
 

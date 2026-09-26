@@ -107,9 +107,9 @@ def test_directive_block_refresh_only_touches_marked_blocks(tmp_path):
     assert refresh_directive_block(marked) is None  # already current
 
     unmarked = tmp_path / "AGENT.md"
-    unmarked.write_text("# LAYA-OCR-GUARD protocol, pasted by hand\n", encoding="utf-8")
+    unmarked.write_text("# BANH-MI-GUARD protocol, pasted by hand\n", encoding="utf-8")
     assert refresh_directive_block(unmarked).startswith("WARN")
-    assert unmarked.read_text(encoding="utf-8") == "# LAYA-OCR-GUARD protocol, pasted by hand\n"
+    assert unmarked.read_text(encoding="utf-8") == "# BANH-MI-GUARD protocol, pasted by hand\n"
 
 
 def test_refresh_after_upgrade_updates_guard_hooks_inside_git_once(tmp_path, monkeypatch):
@@ -132,7 +132,7 @@ def test_pre_with_local_invariants_keeps_the_tree_clean(tmp_path):
 
 def test_unmarked_directives_warning_says_how_to_fix(tmp_path):
     doc = tmp_path / "AGENT.md"
-    doc.write_text("# LAYA-OCR-GUARD protocol pasted by hand\n", encoding="utf-8")
+    doc.write_text("# BANH-MI-GUARD protocol pasted by hand\n", encoding="utf-8")
     msg = refresh_directive_block(doc)
     assert DIRECTIVE_START in msg and "guard hook install --mode agent" in msg
 

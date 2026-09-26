@@ -46,7 +46,7 @@ def test_hook_install_and_backup(mock_git_repo):
     assert "my custom hook" in backup_file.read_text(encoding="utf-8")
 
     # Check new hook is Guard hook
-    assert "LAYA-OCR-GUARD" in custom_pre_commit.read_text(encoding="utf-8")
+    assert "BANH-MI-GUARD" in custom_pre_commit.read_text(encoding="utf-8")
 
     # Status check
     status = installer.get_status()
@@ -93,7 +93,7 @@ def test_hook_install_stealth_mode(mock_git_repo):
     pre_commit = mock_git_repo / ".git" / "hooks" / "pre-commit"
     prep_msg = mock_git_repo / ".git" / "hooks" / "prepare-commit-msg"
     assert pre_commit.exists()
-    assert "LAYA-OCR-GUARD" in pre_commit.read_text(encoding="utf-8")
+    assert "BANH-MI-GUARD" in pre_commit.read_text(encoding="utf-8")
     assert prep_msg.exists()
 
     # Zero workspace footprint: NO CLAUDE.md, NO AGENT.md, NO guard-exec
@@ -238,7 +238,7 @@ def test_safe_append_preserves_user_directives(mock_git_repo):
     updated_content = claude_md.read_text(encoding="utf-8")
     assert "# My Custom Company Guidelines" in updated_content
     assert "Always write docstrings" in updated_content
-    assert "LAYA-OCR-GUARD DUAL-GATE HOOK" in updated_content
+    assert "BANH-MI-GUARD DUAL-GATE HOOK" in updated_content
 
     # Backup should exist
     bak_file = mock_git_repo / "CLAUDE.md.guard.bak"

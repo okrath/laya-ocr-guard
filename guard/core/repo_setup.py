@@ -25,13 +25,13 @@ from typing import Dict, List, Optional, Tuple
 
 from guard import __version__
 
-DIRECTIVE_START = "<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: START === -->"
-DIRECTIVE_END = "<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: END === -->"
-HOOK_BLOCK_START = "# >>> LAYA-OCR-GUARD >>>"
-HOOK_BLOCK_END = "# <<< LAYA-OCR-GUARD <<<"
+DIRECTIVE_START = "<!-- === BANH-MI-GUARD DUAL-GATE HOOK: START === -->"
+DIRECTIVE_END = "<!-- === BANH-MI-GUARD DUAL-GATE HOOK: END === -->"
+HOOK_BLOCK_START = "# >>> BANH-MI-GUARD >>>"
+HOOK_BLOCK_END = "# <<< BANH-MI-GUARD <<<"
 # One line a user can add to a hook kept in their repository (guard never edits it).
 # Skips when guard is not installed, so it never blocks a commit on a machine without guard.
-MANUAL_HOOK_LINE = "if command -v guard >/dev/null 2>&1; then guard post --hook || exit 1; fi  # LAYA-OCR-GUARD"
+MANUAL_HOOK_LINE = "if command -v guard >/dev/null 2>&1; then guard post --hook || exit 1; fi  # BANH-MI-GUARD"
 HOOK_BLOCK = f"""{HOOK_BLOCK_START}
 # Added by guard: this repository sets its own core.hooksPath, so the global guard hook does not run here.
 if command -v guard >/dev/null 2>&1; then
@@ -137,9 +137,9 @@ def _ensure_hook_block(hook: Path) -> Optional[str]:
     if HOOK_BLOCK_START in text and HOOK_BLOCK_END in text:
         new = re.sub(re.escape(HOOK_BLOCK_START) + r".*?" + re.escape(HOOK_BLOCK_END) + r"\n?",
                      lambda _m: HOOK_BLOCK, text, flags=re.DOTALL)
-    elif "LAYA-OCR-GUARD AUTO-GENERATED HOOK" in text:
+    elif "BANH-MI-GUARD AUTO-GENERATED HOOK" in text:
         new = GIT_PRE_COMMIT_HOOK  # a whole file guard generated earlier
-    elif "LAYA-OCR-GUARD" in text:
+    elif "BANH-MI-GUARD" in text:
         return None  # guard is referenced in some other form; leave the author's file alone
     else:
         # Insert right after the shebang so a trailing `exit 0` in the existing hook cannot skip it
@@ -160,7 +160,7 @@ def refresh_directive_block(doc: Path) -> Optional[str]:
         return None
     text = doc.read_text(encoding="utf-8", errors="ignore")
     if DIRECTIVE_START not in text or DIRECTIVE_END not in text:
-        if "LAYA-OCR-GUARD" in text:
+        if "BANH-MI-GUARD" in text:
             return (
                 f"WARN {doc}: guard directives without START/END markers were not refreshed. Wrap the guard "
                 f"section in `{DIRECTIVE_START}` ... `{DIRECTIVE_END}` (guard then keeps it current), or delete "
@@ -282,7 +282,7 @@ def add_directive_block(doc: Path) -> str:
         text = doc.read_text(encoding="utf-8", errors="ignore")
         if DIRECTIVE_START in text and DIRECTIVE_END in text:
             return refresh_directive_block(doc) or f"guard directives already current in {doc}"
-        if "LAYA-OCR-GUARD" in text:
+        if "BANH-MI-GUARD" in text:
             return refresh_directive_block(doc) or f"WARN {doc}: unmarked guard directives"
         backup = doc.with_name(f"{doc.name}.guard.bak")
         if not backup.exists():
@@ -456,7 +456,7 @@ def _global_hooks_active() -> bool:
 
 
 def _hook_calls_guard(hook: Path) -> bool:
-    return hook.is_file() and "LAYA-OCR-GUARD" in hook.read_text(encoding="utf-8", errors="ignore")
+    return hook.is_file() and "BANH-MI-GUARD" in hook.read_text(encoding="utf-8", errors="ignore")
 
 
 def _doc_state(doc: Path) -> str:
@@ -466,7 +466,7 @@ def _doc_state(doc: Path) -> str:
     text = doc.read_text(encoding="utf-8", errors="ignore")
     if DIRECTIVE_START in text and DIRECTIVE_END in text:
         return "marked"
-    return "unmarked" if "LAYA-OCR-GUARD" in text else "none"
+    return "unmarked" if "BANH-MI-GUARD" in text else "none"
 
 
 def _local_agent_docs(cwd: Path) -> List[Path]:
@@ -564,22 +564,13 @@ def setup_health(cwd: Path) -> List[Dict[str, str]]:
                 else:
                     add("ok", "Invariants", f"{len(items) - unchecked}/{len(items)} invariants have automated checks")
 
-    # 4. Laya neural model
-    try:
-        from guard.core.laya_calibration import calibration_record, neural_is_calibrated
-        from guard.core.laya_onnx import DEFAULT_MODEL, get_model_path, is_model_installed
-        if is_model_installed(DEFAULT_MODEL):
-            model = get_model_path(DEFAULT_MODEL)
-            record = calibration_record(model)
-            if neural_is_calibrated(model):
-                add("ok", "Laya model", f"calibrated ({record['accuracy']:.0%}), neural triage in use")
-            elif record:
-                add("ok", "Laya model", f"failed calibration ({record['accuracy']:.0%}); the keyword reflex engine is used")
-            else:
-                add("warn", "Laya model", "installed but never calibrated: triage uses the keyword reflex engine",
-                    "guard laya calibrate   (optional)")
-    except Exception:
-        pass
+    # 4. Files left by guard <= 0.10 (the Laya model is no longer used)
+    models = guard_home() / "models"
+    if models.is_dir():
+        size_mb = sum(f.stat().st_size for f in models.rglob("*") if f.is_file()) / (1024 * 1024)
+        if size_mb >= 1:
+            add("warn", "Old Laya model", f"{models} ({size_mb:.0f} MB) is no longer used since guard 0.11",
+                f"delete the folder to free the space: {models}")
     return out
 
 

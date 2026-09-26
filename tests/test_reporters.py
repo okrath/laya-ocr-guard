@@ -2,7 +2,7 @@
 Unit tests for Markdown and Terminal Reporters.
 """
 
-from guard.core.laya_engine import DomainType, InvariantCheck, LayaInvariantResult, RiskLevel, TaskIntent
+from guard.core.invariant_eval import DomainType, InvariantCheck, InvariantResult
 from guard.core.ocr_engine import DiffSummary, FileDiffStat, RuleViolation
 from guard.core.session import BuildCheckResult, DomainContract, LockedInvariant, PostTaskRecord, PreTaskRecord
 from guard.reporters.markdown import generate_post_task_markdown, generate_pre_task_markdown
@@ -13,10 +13,6 @@ def test_markdown_pre_task_generation():
     pre = PreTaskRecord(
         prompt="Thêm nút floating action button",
         domain=DomainType.FRONTEND,
-        intent=TaskIntent.FEATURE,
-        risk_level=RiskLevel.MEDIUM,
-        risk_score_label="2/4 (Medium)",
-        core_breach_risk=False,
         expected_files=["src/components/FAB.tsx"],
         existing_contracts=[
             DomainContract(category="UI_STATE", name="fab_animation", description="Must smooth pop"),
@@ -58,7 +54,7 @@ def test_markdown_post_task_generation():
         rule_violations=[
             RuleViolation(rule_id="SEC-001", severity="CRITICAL", file_path="src/BadFile.ts", message="Key leak"),
         ],
-        invariant_result=LayaInvariantResult(
+        invariant_result=InvariantResult(
             all_passed=True,
             checks=[InvariantCheck(id="FE-INV-01", description="Visible", passed=True, confidence=0.9)],
             ui_regression_risk=False,
@@ -82,10 +78,6 @@ def test_terminal_render_smoke(capsys):
     pre = PreTaskRecord(
         prompt="Test terminal",
         domain=DomainType.BACKEND,
-        intent=TaskIntent.BUGFIX,
-        risk_level=RiskLevel.LOW,
-        risk_score_label="1/4 (Low)",
-        core_breach_risk=False,
     )
     # Smoke test: ensure no exception thrown during render
     render_pre_task_terminal(pre)

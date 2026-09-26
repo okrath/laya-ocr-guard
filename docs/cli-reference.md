@@ -1,8 +1,8 @@
 # CLI Command Reference: `guard`
 
-> 📦 **GitHub Repository:** [github.com/okrath/laya-ocr-guard](https://github.com/okrath/laya-ocr-guard) &bull; 👤 **Author:** [@okrath](https://github.com/okrath) &bull; 📖 **Live Documentation:** [okrath.github.io/laya-ocr-guard](https://okrath.github.io/laya-ocr-guard/)
+> 📦 **GitHub Repository:** [github.com/okrath/banh-mi-guard](https://github.com/okrath/banh-mi-guard) &bull; 👤 **Author:** [@okrath](https://github.com/okrath) &bull; 📖 **Live Documentation:** [okrath.github.io/banh-mi-guard](https://okrath.github.io/banh-mi-guard/)
 
-Complete command-line manual for `laya-ocr-guard`.
+Complete command-line manual for `banh-mi-guard`.
 
 ---
 ## 1. `guard pre`
@@ -78,7 +78,7 @@ guard review [options]
 
 ## 5. `guard config`
 
-Manages configuration for LLM providers, Alibaba OCR sync, and Laya.
+Manages configuration for LLM providers and Alibaba OCR sync.
 
 ```bash
 # View active configuration table:
@@ -194,7 +194,7 @@ guard update
 # Explicitly bypass quarantine hold:
 guard update --force
 
-# Upgrade Laya-OCR-Guard CLI itself from GitHub:
+# Upgrade Banh-Mi-Guard CLI itself from GitHub:
 guard update self
 
 # Check for Guard CLI updates on GitHub without installing:
@@ -207,9 +207,9 @@ After a successful `guard update self`, the new version runs `guard hook refresh
 
 ## 11. `guard doctor`
 
-Runs comprehensive system environment diagnostics and audits latest releases for both Laya-OCR-Guard CLI (GitHub) and Alibaba OCR (npm).
+Runs comprehensive system environment diagnostics and audits latest releases for both Banh-Mi-Guard CLI (GitHub) and Alibaba OCR (npm).
 
-It also prints the **Installation & Repository Setup** table for the current folder: Git hooks, agent directives (global and in this folder/repository, including sections without guard markers), the repository's own `core.hooksPath`, `guard.invariants.json` and Laya calibration. Every missing item comes with the command that fixes it (`guard install`, `guard hook refresh`, `guard invariants init`, `guard laya calibrate`). The same check runs after `guard update self` and once on the first command of a new version, showing only the problems.
+It also prints the **Installation & Repository Setup** table for the current folder: Git hooks, agent directives (global and in this folder/repository, including sections without guard markers), the repository's own `core.hooksPath`, `guard.invariants.json` and leftover files from older versions. Every missing item comes with the command that fixes it (`guard install`, `guard hook refresh`, `guard invariants init`). The same check runs after `guard update self` and once on the first command of a new version, showing only the problems.
 
 ```bash
 guard doctor [options]
@@ -221,31 +221,9 @@ guard doctor [options]
 
 ---
 
-## 12. `guard laya`
+## 12. `guard laya` (removed)
 
-Manages the embedded Laya ONNX Native Neural Decision Engine.
-
-```bash
-# Check model caching status, hardware acceleration, and paths:
-guard laya status
-
-# Download quantized INT8 weights from HuggingFace (554MB):
-guard laya download [--force]
-
-# Run interactive System 1 triage classification test on a prompt:
-guard laya triage "<prompt>"
-
-# Measure the installed model on the labelled prompt set; the neural model is used only after it passes:
-guard laya calibrate
-```
-
-Triage uses the neural model only when this exact model file passed `guard laya calibrate` (domain accuracy >= 70%). The current `laya-int8` weights score 19% (chance level), so the keyword reflex engine is used. The domain that selects invariants and the build command is scored from the repository itself, not from Laya.
-
-### Options for `guard laya download`:
-* `-m, --model <laya-int8>`: Model checkpoint to download (default: `laya-int8`, 554MB high-fidelity INT8).
-* `-f, --force`: Re-download weights even if already cached.
-
-> 💡 **Zero-Dependency Fallback:** If weights are not downloaded or not calibrated, Guard runs its sub-1ms reflex engine automatically so workflows are never blocked.
+Removed in 0.11. The Laya neural triage only produced informational guesses and never influenced a gate decision; the repository domain is detected from the repository itself. `guard laya ...` prints this notice, and old model files in `~/.guard/models` can be deleted.
 
 ---
-*Created and maintained by [@okrath](https://github.com/okrath) &mdash; Source code available at [github.com/okrath/laya-ocr-guard](https://github.com/okrath/laya-ocr-guard).*
+*Created and maintained by [@okrath](https://github.com/okrath) &mdash; Source code available at [github.com/okrath/banh-mi-guard](https://github.com/okrath/banh-mi-guard).*

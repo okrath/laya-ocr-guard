@@ -194,12 +194,12 @@ def perform_ocr_upgrade(force: bool = False, quarantine_days: float = 3.0) -> Tu
 
 def perform_self_upgrade() -> Tuple[bool, str]:
     """
-    Upgrades laya-ocr-guard itself from GitHub.
+    Upgrades banh-mi-guard itself from GitHub.
     Intelligently detects if installed via pipx or standard pip,
     uses --force/--force-reinstall to bypass cached builds, and handles
     Windows file locking on guard.exe with atomic fallback.
     """
-    repo_url = "git+https://github.com/okrath/laya-ocr-guard.git"
+    repo_url = "git+https://github.com/okrath/banh-mi-guard.git"
     is_pipx = (
         "pipx" in sys.prefix.lower()
         or "pipx" in sys.executable.lower()
@@ -213,7 +213,7 @@ def perform_self_upgrade() -> Tuple[bool, str]:
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
             if proc.returncode == 0:
-                return True, "✅ Successfully upgraded Laya-OCR-Guard via pipx!"
+                return True, "✅ Successfully upgraded Banh-Mi-Guard via pipx!"
             err_out = (proc.stderr or "") + (proc.stdout or "")
             return False, f"pipx upgrade failed: {err_out}"
         except Exception as e:
@@ -265,7 +265,7 @@ def perform_self_upgrade() -> Tuple[bool, str]:
                         exe_renamed[1].rename(exe_renamed[0])
                     except Exception:
                         pass
-            return True, "✅ Successfully upgraded Laya-OCR-Guard from GitHub repository!"
+            return True, "✅ Successfully upgraded Banh-Mi-Guard from GitHub repository!"
 
         err_out = (proc.stderr or "") + (proc.stdout or "")
         return False, f"pip upgrade failed: {err_out}"
@@ -284,13 +284,13 @@ def get_update_cache_path() -> Path:
 
 def check_guard_self_update(timeout: float = 3.0, force: bool = False) -> VersionCheckResult:
     """
-    Check if a newer version of laya-ocr-guard is available on GitHub.
+    Check if a newer version of banh-mi-guard is available on GitHub.
     Uses cached result if within 12 hours unless force=True.
     """
     from guard import __version__
 
     installed = __version__
-    package_name = "laya-ocr-guard"
+    package_name = "banh-mi-guard"
     registry = "github"
     cache_path = get_update_cache_path()
 
@@ -303,7 +303,7 @@ def check_guard_self_update(timeout: float = 3.0, force: bool = False) -> Versio
         except Exception:
             pass
 
-    url = "https://raw.githubusercontent.com/okrath/laya-ocr-guard/main/pyproject.toml"
+    url = "https://raw.githubusercontent.com/okrath/banh-mi-guard/main/pyproject.toml"
     headers = {"User-Agent": f"guard-cli/{installed}"}
     if force:
         url += f"?_t={int(time.time())}"

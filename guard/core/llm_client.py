@@ -1,5 +1,5 @@
 """
-Unified LLM HTTP Client for Laya-OCR-Guard.
+Unified LLM HTTP Client for Banh-Mi-Guard.
 Supports OpenAI-compatible (/v1/chat/completions) and Anthropic (/v1/messages).
 Provides lightweight, token-free, sub-second ping verification via /models.
 """

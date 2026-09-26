@@ -2,7 +2,7 @@
 LLM Reviewer Engine — The Final Safety Gate.
 Uses the LLM configured by the user (OpenAI, Anthropic, DeepSeek, Ollama, etc.)
 to act as the Senior Architect & Code Reviewer:
-1. Reads the aggregated verification report (diff summary, build status, OCR rules, Laya invariants)
+1. Reads the aggregated verification report (diff summary, build status, OCR rules, invariant checks)
 2. Evaluates Technical Soundness (architectural integrity, memory leaks, security, out-of-scope files)
 3. Evaluates Ergonomics & UX/UI Polish
 4. Issues Final Score (0-10) and Verdict: APPROVED or REVISE with Actionable Remediation.
@@ -20,7 +20,7 @@ from typing import List, Optional, Union
 from pydantic import BaseModel, Field
 
 from guard.core.config import GuardConfig
-from guard.core.laya_engine import DomainType, LayaInvariantResult
+from guard.core.invariant_eval import DomainType, InvariantResult
 from guard.core.llm_client import call_llm
 from guard.core.ocr_engine import DiffSummary, RuleViolation
 from guard.core.session import BuildCheckResult, DomainContract, LockedInvariant
@@ -28,6 +28,10 @@ from guard.core.session import BuildCheckResult, DomainContract, LockedInvariant
 REVIEW_MIN_TIMEOUT_S = 180.0
 REVIEW_BATCH_CHARS = 80000
 REVIEW_MAX_BATCHES = 6
+FORMAT_REMINDER = (
+    "\nYour previous answer could not be parsed. Answer again, starting with exactly these lines:\n"
+    "SCORE: <0.0-10.0>\nVERDICT: <APPROVED or REVISE>\nSUMMARY: <one paragraph>\n"
+)
 
 
 def _parse_invariant_proposals(text: str) -> List[dict]:
@@ -97,7 +101,7 @@ class LLMReviewerEngine:
         diff_summary: Optional[DiffSummary] = None,
         build_check: Optional[BuildCheckResult] = None,
         violations: Optional[List[RuleViolation]] = None,
-        invariant_result: Optional[LayaInvariantResult] = None,
+        invariant_result: Optional[InvariantResult] = None,
         contracts: Optional[List[DomainContract]] = None,
         invariants: Optional[List[LockedInvariant]] = None,
         use_llm: bool = True,
@@ -137,7 +141,7 @@ class LLMReviewerEngine:
                 )
                 if llm_verdict:
                     return llm_verdict
-                llm_error = "LLM response did not follow the SCORE/VERDICT format"
+                llm_error = getattr(self, "last_failure", "") or "LLM response did not follow the SCORE/VERDICT format"
             except Exception as e:
                 llm_error = f"{type(e).__name__}: {str(e)[:200]}"
         elif use_llm:
@@ -153,7 +157,7 @@ class LLMReviewerEngine:
         build_check: Optional[BuildCheckResult],
         diff_summary: Optional[DiffSummary],
         violations: List[RuleViolation],
-        invariant_result: Optional[LayaInvariantResult],
+        invariant_result: Optional[InvariantResult],
         focus: str = "all",
     ) -> LLMReviewVerdict:
         score = 10.0
@@ -268,7 +272,7 @@ class LLMReviewerEngine:
         diff_summary: Optional[DiffSummary],
         build_check: Optional[BuildCheckResult],
         violations: List[RuleViolation],
-        invariant_result: Optional[LayaInvariantResult],
+        invariant_result: Optional[InvariantResult],
         contracts: Optional[List[DomainContract]],
         focus: str = "all",
         evidence: Optional[List[str]] = None,
@@ -363,15 +367,21 @@ Verified evidence (computed by guard over the whole repository, valid for every 
         verdicts: List[LLMReviewVerdict] = []
         for i, batch in enumerate(batches, start=1):
             part = f"Diff part {i}/{len(batches)} (other parts are reviewed separately; judge only this part):\n" if len(batches) > 1 else ""
-            raw_response = call_llm(
-                cfg=review_cfg,
-                prompt=f"{header}\n{part}Git Diff:\n```\n{batch}\n```\n",
-                system_prompt=system_prompt,
-                temperature=0.1,
-                max_tokens=1000,
-            )
-            verdict = self._parse_llm_response(raw_response, model_name=model_name, focus=focus)
+            prompt_text = f"{header}\n{part}Git Diff:\n```\n{batch}\n```\n"
+            verdict = None
+            for attempt in range(2):  # one retry when the answer ignores the SCORE/VERDICT format
+                raw_response = call_llm(
+                    cfg=review_cfg,
+                    prompt=prompt_text if attempt == 0 else prompt_text + FORMAT_REMINDER,
+                    system_prompt=system_prompt,
+                    temperature=0.1,
+                    max_tokens=1000,
+                )
+                verdict = self._parse_llm_response(raw_response, model_name=model_name, focus=focus)
+                if verdict is not None:
+                    break
             if verdict is None:
+                self.last_failure = f"part {i}/{len(batches)} answer was not a review: {(raw_response or '').strip()[:160]}"
                 return None
             verdicts.append(verdict)
         return self._merge_verdicts(verdicts)
@@ -410,6 +420,12 @@ Verified evidence (computed by guard over the whole repository, valid for every 
             if any(k in first_line for k in ["assets/", ".lock", "-lock.", ".svg", ".png", ".onnx", "tokenizer.json"]):
                 continue
             chunk = "diff --git " + c
+            if "\ndeleted file mode" in chunk.split("@@", 1)[0]:
+                # A deleted file's full content adds little to a review (removed-symbol references are
+                # checked separately) and large blocks of removed code can make a model refuse the part
+                head = chunk.split("\n@@", 1)[0]
+                removed = sum(1 for line in chunk.splitlines() if line.startswith("-") and not line.startswith("---"))
+                chunk = f"{head}\n[file deleted: {removed} lines removed; content omitted]\n"
             # A single oversized file is split too, never cut off
             for k in range(0, len(chunk), REVIEW_BATCH_CHARS):
                 code_chunks.append(chunk[k:k + REVIEW_BATCH_CHARS])

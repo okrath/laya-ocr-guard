@@ -1,5 +1,5 @@
 """
-Session Manager for Laya-OCR-Guard.
+Session Manager for Banh-Mi-Guard.
 Persists and transitions state between PRE-TASK and POST-TASK:
 - Pre-task: intent, risk score, baseline contracts, locked invariants, target files
 - Post-task: actual diff stats, out-of-scope files, build status, rule violations, Muse verdict
@@ -18,7 +18,7 @@ from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from guard.core.laya_engine import DomainType, LayaInvariantResult, LayaTriageResult, RiskLevel, TaskIntent
+from guard.core.invariant_eval import DomainType, InvariantResult
 from guard.core.ocr_engine import DiffSummary, RuleViolation
 
 
@@ -49,15 +49,10 @@ class PreTaskRecord(BaseModel):
     prompt: str
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     domain: DomainType
-    intent: TaskIntent
-    risk_level: RiskLevel
-    risk_score_label: str
-    core_breach_risk: bool
     expected_files: List[str] = Field(default_factory=list)
     existing_contracts: List[DomainContract] = Field(default_factory=list)
     locked_invariants: List[LockedInvariant] = Field(default_factory=list)
     non_regression_strategy: str = ""
-    triage_domain: Optional[str] = None  # Prompt-based guess, informational only
     # Files already dirty when pre ran: path -> content sha1 ("<deleted>" if missing)
     baseline_dirty: Dict[str, str] = Field(default_factory=dict)
     baseline_invariant_status: Dict[str, str] = Field(default_factory=dict)
@@ -83,7 +78,7 @@ class PostTaskRecord(BaseModel):
     diff_summary: Optional[DiffSummary] = None
     build_check: Optional[BuildCheckResult] = None
     rule_violations: List[RuleViolation] = Field(default_factory=list)
-    invariant_result: Optional[LayaInvariantResult] = None
+    invariant_result: Optional[InvariantResult] = None
     all_passed: bool = False
     muse_verdict: str = "PENDING"  # "APPROVED" or "REVISE"
     muse_score: float = 0.0
@@ -142,7 +137,7 @@ class SessionManager:
             content = exclude_file.read_text(encoding="utf-8", errors="ignore") if exclude_file.exists() else ""
             lines = [line.strip() for line in content.splitlines()]
             if ".guard/" not in lines and ".guard" not in lines:
-                new_content = content.rstrip() + ("\n" if content else "") + "\n# Laya-OCR-Guard local exclude\n.guard/\n"
+                new_content = content.rstrip() + ("\n" if content else "") + "\n# Banh-Mi-Guard local exclude\n.guard/\n"
                 exclude_file.write_text(new_content, encoding="utf-8")
         except OSError:
             pass
@@ -211,7 +206,6 @@ class SessionManager:
     def start_pre_session(
         self,
         prompt: str,
-        triage: LayaTriageResult,
         expected_files: List[str],
         contracts: List[DomainContract],
         invariants: List[LockedInvariant],
@@ -230,18 +224,13 @@ class SessionManager:
         session_id = f"guard-{int(time.time())}"
         pre_rec = PreTaskRecord(
             prompt=prompt,
-            domain=domain or triage.domain,
-            triage_domain=triage.domain.value,
+            domain=domain or DomainType.BACKEND,
             baseline_dirty=baseline_dirty or {},
             baseline_invariant_status=baseline_invariant_status or {},
             base_ref=base_ref,
             late_scope=late_scope or [],
             baseline_snapshot=baseline_snapshot,
             restarts=restarts or [],
-            intent=triage.intent,
-            risk_level=triage.risk_level,
-            risk_score_label=triage.risk_score_label,
-            core_breach_risk=triage.core_breach_risk,
             expected_files=expected_files,
             existing_contracts=contracts,
             locked_invariants=invariants,

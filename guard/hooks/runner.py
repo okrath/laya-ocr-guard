@@ -1,5 +1,5 @@
 """
-Sandwich Pattern Runner for Laya-OCR-Guard.
+Sandwich Pattern Runner for Banh-Mi-Guard.
 Executes:
 1. `guard pre "<prompt>"`
 2. Subprocess execution of the Agent / Developer command

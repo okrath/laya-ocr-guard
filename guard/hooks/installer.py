@@ -1,5 +1,5 @@
 """
-Hook Installer and Manager for Laya-OCR-Guard.
+Hook Installer and Manager for Banh-Mi-Guard.
 Supports installing and managing:
 1. Git Hooks: `.git/hooks/pre-commit` and `prepare-commit-msg`
 2. Agent Directives: `CLAUDE.md` and `AGENT.md` (for omp, Claude Code, Cursor, Windsurf)
@@ -14,6 +14,8 @@ import stat
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+from guard.core.repo_setup import DIRECTIVE_END, DIRECTIVE_START
 from guard.hooks.templates import (
     AGENT_DIRECTIVES_TEMPLATE,
     AGENT_WRAPPER_SCRIPT,
@@ -183,7 +185,7 @@ class HookInstaller:
                 content = self.git_exclude_file.read_text(encoding="utf-8", errors="ignore")
             lines = [line.strip() for line in content.splitlines()]
             if ".guard/" not in lines and ".guard" not in lines:
-                new_content = content.rstrip() + ("\n" if content else "") + "\n# Laya-OCR-Guard stealth local exclude\n.guard/\n"
+                new_content = content.rstrip() + ("\n" if content else "") + "\n# Banh-Mi-Guard stealth local exclude\n.guard/\n"
                 self.git_exclude_file.write_text(new_content, encoding="utf-8")
                 return True
         except Exception:
@@ -201,7 +203,7 @@ class HookInstaller:
             lines = content.splitlines()
             new_lines = [
                 line for line in lines
-                if line.strip() not in (".guard/", ".guard", "# Laya-OCR-Guard stealth local exclude")
+                if line.strip() not in (".guard/", ".guard", "# Banh-Mi-Guard stealth local exclude")
             ]
             if len(new_lines) != len(lines):
                 new_content = "\n".join(new_lines).strip()
@@ -221,10 +223,10 @@ class HookInstaller:
         prep_msg = self.git_hooks_dir / "prepare-commit-msg"
         agent_exec = self.guard_bin_dir / "guard-exec"
 
-        claude_active = self.claude_md_path.exists() and "LAYA-OCR-GUARD" in self.claude_md_path.read_text(encoding="utf-8", errors="ignore")
-        agent_active = self.agent_md_path.exists() and "LAYA-OCR-GUARD" in self.agent_md_path.read_text(encoding="utf-8", errors="ignore")
-        pre_commit_installed = pre_commit.exists() and "LAYA-OCR-GUARD" in pre_commit.read_text(encoding="utf-8", errors="ignore")
-        prep_msg_installed = prep_msg.exists() and "LAYA-OCR-GUARD" in prep_msg.read_text(encoding="utf-8", errors="ignore")
+        claude_active = self.claude_md_path.exists() and "BANH-MI-GUARD" in self.claude_md_path.read_text(encoding="utf-8", errors="ignore")
+        agent_active = self.agent_md_path.exists() and "BANH-MI-GUARD" in self.agent_md_path.read_text(encoding="utf-8", errors="ignore")
+        pre_commit_installed = pre_commit.exists() and "BANH-MI-GUARD" in pre_commit.read_text(encoding="utf-8", errors="ignore")
+        prep_msg_installed = prep_msg.exists() and "BANH-MI-GUARD" in prep_msg.read_text(encoding="utf-8", errors="ignore")
 
         git_exclude_active = False
         if self.git_exclude_file.exists():
@@ -339,7 +341,7 @@ class HookInstaller:
 
                 if hook_file.exists():
                     content = hook_file.read_text(encoding="utf-8", errors="ignore")
-                    if "LAYA-OCR-GUARD" in content:
+                    if "BANH-MI-GUARD" in content:
                         hook_file.unlink()
                         messages.append(f"Removed Guard hook: {hook_file}")
 
@@ -361,8 +363,7 @@ class HookInstaller:
 
             # Clean directives from CLAUDE.md & AGENT.md
             # Clean directives from CLAUDE.md & AGENT.md (Safe restore / preserve user content)
-            start_marker = "<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: START === -->"
-            end_marker = "<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: END === -->"
+            start_marker, end_marker = DIRECTIVE_START, DIRECTIVE_END
             for doc_path in [self.claude_md_path, self.agent_md_path]:
                 bak_path_new = doc_path.with_name(f"{doc_path.name}.guard.bak")
                 bak_path_legacy = doc_path.with_suffix(".guard.bak")
@@ -385,7 +386,7 @@ class HookInstaller:
                         else:
                             doc_path.unlink()
                             messages.append(f"Removed Guard-generated {doc_path.name}")
-                    elif "LAYA-OCR-GUARD" in content or content.strip() == AGENT_DIRECTIVES_TEMPLATE.strip():
+                    elif "BANH-MI-GUARD" in content or content.strip() == AGENT_DIRECTIVES_TEMPLATE.strip():
                         doc_path.unlink()
                         messages.append(f"Removed Guard-generated {doc_path.name}")
         return True, messages
@@ -394,7 +395,7 @@ class HookInstaller:
         # Backup existing hook if not created by Guard
         if target_path.exists():
             existing_content = target_path.read_text(encoding="utf-8", errors="ignore")
-            if "LAYA-OCR-GUARD" not in existing_content:
+            if "BANH-MI-GUARD" not in existing_content:
                 backup_path = target_path.with_suffix(".guard.bak")
                 target_path.rename(backup_path)
 
@@ -408,13 +409,13 @@ class HookInstaller:
 
     def _inject_directive(self, target_path: Path):
         directive_block = (
-            f"\n\n<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: START === -->\n"
+            f"\n\n{DIRECTIVE_START}\n"
             f"{AGENT_DIRECTIVES_TEMPLATE.strip()}\n"
-            f"<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: END === -->\n"
+            f"{DIRECTIVE_END}\n"
         )
         if target_path.exists():
             existing_content = target_path.read_text(encoding="utf-8", errors="ignore")
-            if "LAYA-OCR-GUARD" in existing_content:
+            if "BANH-MI-GUARD" in existing_content:
                 return  # Already injected, never duplicate
 
             # Backup original user directives before modifying

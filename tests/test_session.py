@@ -4,7 +4,7 @@ Unit tests for Session Manager.
 
 import pytest
 
-from guard.core.laya_engine import DomainType, LayaTriageResult, RiskLevel, TaskIntent
+from guard.core.invariant_eval import DomainType
 from guard.core.session import (
     DomainContract,
     LockedInvariant,
@@ -25,14 +25,7 @@ def test_session_lifecycle(temp_repo):
     mgr = SessionManager(temp_repo)
     assert mgr.load_session() is None
 
-    triage = LayaTriageResult(
-        domain=DomainType.FRONTEND,
-        intent=TaskIntent.FEATURE,
-        risk_level=RiskLevel.MEDIUM,
-        risk_score_label="2/4 (Medium)",
-        core_breach_risk=False,
-        latency_ms=1.2,
-    )
+    domain = DomainType.FRONTEND
 
     contracts = [
         DomainContract(category="UI_STATE", name="loading_spinner", description="Must show spinner on click"),
@@ -44,7 +37,7 @@ def test_session_lifecycle(temp_repo):
     # 1. Start Pre-Session
     session = mgr.start_pre_session(
         prompt="Add sticky checkout button",
-        triage=triage,
+        domain=domain,
         expected_files=["src/Checkout.tsx"],
         contracts=contracts,
         invariants=invariants,
@@ -90,17 +83,10 @@ def test_session_parent_walk_up(tmp_path):
     sub_repo.mkdir(parents=True)
 
     ws_mgr = SessionManager(workspace)
-    triage = LayaTriageResult(
-        domain=DomainType.BACKEND,
-        intent=TaskIntent.FEATURE,
-        risk_level=RiskLevel.LOW,
-        risk_score_label="1/4 (Low)",
-        core_breach_risk=False,
-        latency_ms=0.5,
-    )
+    domain = DomainType.BACKEND
     ws_session = ws_mgr.start_pre_session(
         prompt="Workspace task across sub-repos",
-        triage=triage,
+        domain=domain,
         expected_files=["services/api/main.py"],
         contracts=[],
         invariants=[],

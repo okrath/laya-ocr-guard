@@ -1,5 +1,5 @@
 """
-Configuration Management for Laya-OCR-Guard.
+Configuration Management for Banh-Mi-Guard.
 Supports Global (~/.guard/config.json) and Local (.guard/config.json).
 Provides Interactive Wizard for OpenAI-compatible and Anthropic protocols,
 Ping verification, and automatic synchronization to Alibaba OCR CLI.
@@ -45,13 +45,6 @@ class LLMConfig(BaseModel):
         return f"{self.api_key[:4]}...{self.api_key[-4:]}"
 
 
-class LayaConfig(BaseModel):
-    enabled: bool = Field(default=True, description="Laya decision engine always active")
-    model_name: str = Field(default="laya-int8", description="Model checkpoint: laya-int8 (554MB high-fidelity)")
-    device: str = Field(default="cpu", description="Inference device: cpu or cuda")
-    timeout_ms: int = Field(default=3000, description="Fast-fail timeout in ms")
-
-
 class OCRConfig(BaseModel):
     auto_sync: bool = Field(default=True, description="Auto synchronize config to Alibaba OCR CLI")
     binary_path: str = Field(default="ocr", description="Command or path for Alibaba OCR CLI")
@@ -60,7 +53,6 @@ class OCRConfig(BaseModel):
 
 class GuardConfig(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
-    laya: LayaConfig = Field(default_factory=LayaConfig)
     ocr: OCRConfig = Field(default_factory=OCRConfig)
 
 
@@ -123,7 +115,7 @@ def sync_to_alibaba_ocr(llm: LLMConfig) -> Tuple[bool, str]:
 def run_llm_wizard(local: bool = False, repo_path: Optional[Path] = None) -> GuardConfig:
     current_cfg = load_config(repo_path)
     console.print(Panel(
-        "[bold cyan]🤖 LAYA-OCR-GUARD — LLM CONFIGURATION WIZARD[/bold cyan]\n"
+        "[bold cyan]🤖 BANH-MI-GUARD — LLM CONFIGURATION WIZARD[/bold cyan]\n"
         "[dim]Press Enter to accept default values in brackets [ ].[/dim]",
         border_style="cyan"
     ))
@@ -238,9 +230,6 @@ def print_config_table(config: GuardConfig, path_info: str):
     table.add_row("LLM", "API Key", config.llm.masked_api_key)
     table.add_row("LLM", "Timeout", f"{config.llm.timeout}s")
 
-    table.add_row("Laya Neural", "Engine", "Always Active (Embedded ONNX)")
-    table.add_row("Laya Neural", "Model", config.laya.model_name)
-    table.add_row("Laya Neural", "Device", config.laya.device)
 
     table.add_row("Alibaba OCR", "Auto-Sync", str(config.ocr.auto_sync))
     table.add_row("Alibaba OCR", "CLI Binary", config.ocr.binary_path)

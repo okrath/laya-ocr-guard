@@ -1,5 +1,5 @@
-<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: START === -->
-# 🛡️ MANDATORY PROTOCOL: LAYA-OCR-GUARD DUAL-GATE HOOK
+<!-- === BANH-MI-GUARD DUAL-GATE HOOK: START === -->
+# 🛡️ MANDATORY PROTOCOL: BANH-MI-GUARD DUAL-GATE HOOK
 
 This document establishes **Mandatory Operational Directives** for any AI Coding Agent (`omp`, Claude Code, Cursor, Windsurf, Aider) working in this repository.
 
@@ -30,7 +30,8 @@ To strictly prevent regressions, feature breakage, and unintended code loss, **A
 **Gate rules:**
 - Run `guard pre` on a clean working tree, before the first edit. It refuses a dirty tree unless `--allow-dirty` (for unrelated work that must stay; the report flags every pre-existing change). An unfinished or rejected session can only be restarted with `--force`: the restart keeps the original baseline, base commit and scope, is recorded in the report, and files covered only by scope added in the restart fail as SCOPE-004.
 - Declare scope with file names in the request or `--scope` (repeatable, globs allowed). Without a scope, the post report says scope was not audited.
-- Project invariants live in `guard.invariants.json` at the repository root (`checks`: `{"files": glob, "forbid"|"require": regex}`). `guard invariants init` creates it from this file's invariant section, `guard invariants check` validates it. Invariants without checks are UNVERIFIED and must be verified manually. The LLM gate may add rules it discovers (only when they pass on the current code); commit those additions with the task. Never remove or relax an invariant unless the task explicitly asks for it and declares the file in `--scope`.
+- Project invariants come from `guard.invariants.json` in the repository root (committed by the team) and the local, Git-excluded `.guard/invariants.json` (guard's own; rules the LLM gate learns go there). `checks`: `{"files": glob, "forbid"|"require": regex}`. `guard invariants check` validates them. Invariants without checks are UNVERIFIED and must be verified manually. Never remove or relax an invariant unless the task explicitly asks for it and declares the file in `--scope`.
+- Guard never edits repository files. When `guard doctor` reports that a repository file (agent doc, hook kept in the tree) needs a change, tell the user instead of editing it as a side effect.
 - The report names the gate that actually ran: "LLM Gate" only when the LLM answered, otherwise "Heuristic Gate" plus the reason.
 
 ---
@@ -66,4 +67,4 @@ When replying to the user, the Agent must strictly structure the response:
 * **Build Check:** [Automated compilation & test results from guard post]
 * **LLM Gate Verdict:** [APPROVED or REVISE]
 ```
-<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: END === -->
+<!-- === BANH-MI-GUARD DUAL-GATE HOOK: END === -->

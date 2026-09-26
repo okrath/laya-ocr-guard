@@ -1,6 +1,6 @@
 # The 2D Quality Matrix: Platform Domains × Quality Pillars
 
-> 📦 **GitHub Repository:** [github.com/okrath/laya-ocr-guard](https://github.com/okrath/laya-ocr-guard) &bull; 👤 **Author:** [@okrath](https://github.com/okrath) &bull; 📖 **Live Documentation:** [okrath.github.io/laya-ocr-guard](https://okrath.github.io/laya-ocr-guard/)
+> 📦 **GitHub Repository:** [github.com/okrath/banh-mi-guard](https://github.com/okrath/banh-mi-guard) &bull; 👤 **Author:** [@okrath](https://github.com/okrath) &bull; 📖 **Live Documentation:** [okrath.github.io/banh-mi-guard](https://okrath.github.io/banh-mi-guard/)
 
 `guard` evaluates code safety across a two-dimensional matrix combining **4 Platform Domains** with **6 Cross-Cutting Quality Pillars**.
 
@@ -96,4 +96,4 @@ guard review --focus performance
 guard review --focus ux
 ```
 ---
-*Created and maintained by [@okrath](https://github.com/okrath) &mdash; Source code available at [github.com/okrath/laya-ocr-guard](https://github.com/okrath/laya-ocr-guard).*
+*Created and maintained by [@okrath](https://github.com/okrath) &mdash; Source code available at [github.com/okrath/banh-mi-guard](https://github.com/okrath/banh-mi-guard).*

@@ -9,7 +9,7 @@ _CHAIN_LOCAL_HOOKS = """SELF_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 HOOK_NAME="$(basename "$0")"
 LOCAL_DIR="$(cd "$(git rev-parse --git-common-dir 2>/dev/null)/hooks" 2>/dev/null && pwd -P)"
 if [ -n "$LOCAL_DIR" ] && [ "$LOCAL_DIR" != "$SELF_DIR" ] && [ -x "$LOCAL_DIR/$HOOK_NAME" ] \\
-   && ! grep -q "LAYA-OCR-GUARD" "$LOCAL_DIR/$HOOK_NAME"; then
+   && ! grep -q "BANH-MI-GUARD" "$LOCAL_DIR/$HOOK_NAME"; then
   "$LOCAL_DIR/$HOOK_NAME" "$@" || exit $?
 fi
 if [ -n "$LOCAL_DIR" ] && [ -x "$LOCAL_DIR/$HOOK_NAME.guard.bak" ]; then
@@ -19,12 +19,12 @@ fi
 
 # Git pre-commit hook: runs guard post to verify build, blast radius, and invariants before allowing commit
 GIT_PRE_COMMIT_HOOK = """#!/usr/bin/env sh
-# --- LAYA-OCR-GUARD AUTO-GENERATED HOOK ---
+# --- BANH-MI-GUARD AUTO-GENERATED HOOK ---
 """ + _CHAIN_LOCAL_HOOKS + """if ! command -v guard >/dev/null 2>&1; then
-  echo "⚠️  Laya-OCR-Guard: 'guard' is not on PATH, skipping guard check."
+  echo "⚠️  Banh-Mi-Guard: 'guard' is not on PATH, skipping guard check."
   exit 0
 fi
-echo "🛡️  Running Laya-OCR-Guard Pre-Commit Check..."
+echo "🛡️  Running Banh-Mi-Guard Pre-Commit Check..."
 # --hook: skipped without a guard session, or when the changes are exactly what was last approved
 guard post --hook
 STATUS=$?
@@ -39,14 +39,14 @@ exit 0
 
 # Git prepare-commit-msg hook template
 GIT_PREPARE_COMMIT_MSG_HOOK = """#!/usr/bin/env sh
-# --- LAYA-OCR-GUARD COMMIT MSG HOOK ---
+# --- BANH-MI-GUARD COMMIT MSG HOOK ---
 """ + _CHAIN_LOCAL_HOOKS + """exit 0
 """
 
 # Agent wrapper script template (for command line harness execution)
 # Extra pre-task flags (e.g. --scope src/ui --force) are passed through GUARD_PRE_ARGS.
 AGENT_WRAPPER_SCRIPT = """#!/usr/bin/env sh
-# --- LAYA-OCR-GUARD AGENT HARNESS ---
+# --- BANH-MI-GUARD AGENT HARNESS ---
 PROMPT="$1"
 shift
 
@@ -69,7 +69,7 @@ exit $POST_STATUS
 """
 
 # Agent Instruction Directive Template for CLAUDE.md & AGENT.md (Auto-consumed by omp, Claude Code, Cursor, Windsurf)
-AGENT_DIRECTIVES_TEMPLATE = """# 🛡️ MANDATORY PROTOCOL: LAYA-OCR-GUARD DUAL-GATE HOOK
+AGENT_DIRECTIVES_TEMPLATE = """# 🛡️ MANDATORY PROTOCOL: BANH-MI-GUARD DUAL-GATE HOOK
 
 This document establishes **Mandatory Operational Directives** for any AI Coding Agent (`omp`, Claude Code, Cursor, Windsurf, Aider) working in this repository.
 

@@ -51,7 +51,7 @@ def test_complete_install_reports_ok(fake_machine, tmp_path):
 
 def test_unmarked_directives_are_a_warning_with_instructions(fake_machine, tmp_path):
     repo = make_repo(tmp_path / "app")
-    (repo / "CLAUDE.md").write_text("# LAYA-OCR-GUARD protocol pasted by hand\n", encoding="utf-8")
+    (repo / "CLAUDE.md").write_text("# BANH-MI-GUARD protocol pasted by hand\n", encoding="utf-8")
     rows = [r for r in setup_health(repo) if r["item"] == "Agent directives"]
     assert rows and all(r["level"] == "warn" for r in rows)
     assert "START/END markers" in rows[0]["fix"]

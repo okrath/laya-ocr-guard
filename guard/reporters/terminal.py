@@ -1,5 +1,5 @@
 """
-Terminal Rich UI Reporter for Laya-OCR-Guard.
+Terminal Rich UI Reporter for Banh-Mi-Guard.
 Renders visually striking CLI outputs with colorized badges, tables, and panels.
 """
 
@@ -21,19 +21,11 @@ console = Console()
 def render_pre_task_terminal(pre: PreTaskRecord):
     # Header panel
     header_text = Text()
-    header_text.append("🛡️ LAYA-OCR-GUARD: PRE-TASK IMPACT NOTE\n", style="bold cyan")
+    header_text.append("🛡️ BANH-MI-GUARD: PRE-TASK IMPACT NOTE\n", style="bold cyan")
     header_text.append(f"Prompt: ", style="bold white")
     header_text.append(f"{pre.prompt}\n", style="italic yellow")
     header_text.append(f"Domain: ", style="bold white")
     header_text.append(f"{pre.domain.value.upper()}  ", style="bold green")
-    header_text.append(f"Intent: ", style="bold white")
-    header_text.append(f"{pre.intent.value.upper()}  ", style="cyan")
-    header_text.append(f"Risk: ", style="bold white")
-    risk_style = "bold red" if pre.risk_level >= 3 else "bold green"
-    header_text.append(f"{pre.risk_score_label} ", style=risk_style)
-    if pre.core_breach_risk:
-        header_text.append("[CORE BREACH!]", style="bold white on red")
-
     console.print(Panel(header_text, border_style="cyan"))
 
     # Contracts Table
@@ -138,6 +130,7 @@ def render_post_task_terminal(post: PostTaskRecord, pre: Optional[PreTaskRecord]
                 "passed": Text("✅ PASSED", style="bold green"),
                 "failed": Text("❌ VIOLATED", style="bold red"),
                 "baseline_failed": Text("⚠️ WAS FAILING", style="yellow"),
+                "retired": Text("🗑️ RETIRED", style="dim"),
             }.get(c.status, Text("⚪ UNVERIFIED", style="yellow"))
             inv_table.add_row(c.id, c.description, v_text, c.notes)
         console.print(inv_table)

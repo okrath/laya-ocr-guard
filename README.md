@@ -1,27 +1,27 @@
-# Laya OCR Guard (`guard`)
+# Banh Mi Guard (`guard`)
 
 <p align="center">
-  <img src="docs/assets/logo.svg" width="160" height="160" alt="Laya OCR Guard Logo - The Bánh Mì Sandwich Pattern">
+  <img src="docs/assets/logo.svg" width="160" height="160" alt="Banh Mi Guard Logo - The Bánh Mì Sandwich Pattern">
   <br>
   <strong>Dual-Gate Impact Analysis & Regression Guard for AI-Assisted Development</strong>
   <br>
-  <em>Enforcing the Sandwich Pattern with sub-30ms triage, deterministic diff auditing, and LLM gatekeeping.</em>
+  <em>Enforcing the Sandwich Pattern with scope control, deterministic diff auditing, project invariants and LLM gatekeeping.</em>
 </p>
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Documentation](https://img.shields.io/badge/docs-live_website-brightgreen.svg)](https://okrath.github.io/laya-ocr-guard/)
+[![Documentation](https://img.shields.io/badge/docs-live_website-brightgreen.svg)](https://okrath.github.io/banh-mi-guard/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#-cross-platform-installation-windows-linux-macos)
 [![Architecture](https://img.shields.io/badge/architecture-Dual--Gate-green.svg)](#-three-pillar-architecture)
 
 **Dual-Gate Impact Analysis & Regression Guard for AI-Assisted Development.**
 
-📖 **Live Documentation & Interactive Guide:** [https://okrath.github.io/laya-ocr-guard/](https://okrath.github.io/laya-ocr-guard/)
+📖 **Live Documentation & Interactive Guide:** [https://okrath.github.io/banh-mi-guard/](https://okrath.github.io/banh-mi-guard/)
 
 `guard` wraps coding workflows in an automated safety harness by uniting three distinct pillars:
-1. **Laya** (System 1 fast reflex triage, <30ms, 0-cost, 0 token)
+1. **Deterministic gates** (0 token): declared scope, base-commit diff audit, build/test command, project invariants (`guard.invariants.json`) and removed-symbol reference checks
 2. **Alibaba Open Code Review - OCR** (Deterministic git diff blast-radius & static rules engine, 0-cost)
-3. **Your Configured LLM** (Claude 3.7 Sonnet, GPT-4o, DeepSeek, Ollama...): Acting as the Architectural Brain & **Final Safety Gatekeeper**.
+3. **Your Configured LLM** (Claude, GPT, DeepSeek, Ollama...): Acting as the Architectural Brain & **Final Safety Gatekeeper**.
 
 Automates and enforces the rigorous **Impact & Regression Protocol** pioneered in `oh-my-ainovel`.
 
@@ -31,7 +31,7 @@ Automates and enforces the rigorous **Impact & Regression Protocol** pioneered i
 
 > 🥖 **The Bánh Mì Sandwich Pattern:**
 > Just like a crisp Vietnamese Bánh Mì, `guard` sandwiches code modifications between two protective crusts:
-> * **Top Crust (`guard pre`):** Fast reflex triage, invariant locking & domain contract extraction.
+> * **Top Crust (`guard pre`):** Scope declaration, baseline snapshot, invariant locking & domain contract extraction.
 > * **Core Filling (Developer / AI Agent edits):** Safe, scoped code implementation within contract boundaries.
 > * **Bottom Crust (`guard post`):** Deterministic diff blast-radius audit, OCR static rulebook, project build/test command, `guard.invariants.json` checks, and LLM Gatekeeper approval.
 
@@ -41,7 +41,7 @@ Automates and enforces the rigorous **Impact & Regression Protocol** pioneered i
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ 1. PRE-TASK PHASE: `guard pre "<prompt>"`                   │
-│ • Laya (<30ms, 0-cost): Intent, domain & risk triage        │
+│ • Scope declaration & repository domain detection           │
 │ • Domain Contract Extractor (FE / BE / Infra / MB)          │
 │ • Lock Invariant Rules (Must NOT be broken)                 │
 │ ➔ Emits: "### 🔍 PRE-TASK IMPACT NOTE"                      │
@@ -79,16 +79,16 @@ Install the `guard` CLI globally on any platform using one of the following meth
 ### Method 1: Install directly from GitHub (Recommended)
 ```bash
 # On Linux / macOS (Recommended with pipx for isolated global binary):
-pipx install git+https://github.com/okrath/laya-ocr-guard.git
+pipx install git+https://github.com/okrath/banh-mi-guard.git
 
 # Or with standard pip across all platforms (Windows / Linux / macOS):
-pip install git+https://github.com/okrath/laya-ocr-guard.git
+pip install git+https://github.com/okrath/banh-mi-guard.git
 ```
 
 ### Method 2: Clone repository & install in editable mode
 ```bash
-git clone https://github.com/okrath/laya-ocr-guard.git
-cd laya-ocr-guard
+git clone https://github.com/okrath/banh-mi-guard.git
+cd banh-mi-guard
 pip install -e .
 ```
 
@@ -104,24 +104,7 @@ pip install -e .
   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
   ```
 
-### 🧠 Laya Neural Engine Setup (Embedded ONNX)
-`guard` embeds the native **Laya System 1 Neural Engine** using ONNX Runtime and ModernBERT tokenizers. **No `pip install laya` or 2.5 GB PyTorch dependencies required!**
-
-To download and cache the INT8 neural weights (~554 MB):
-```bash
-# Download standard INT8 weights from HuggingFace:
-guard laya download
-
-# Measure the installed model on a labelled prompt set (required before it is used):
-guard laya calibrate
-
-# Inspect engine status, cache directory, and hardware acceleration:
-guard laya status
-
-# Test interactive System 1 triage on a prompt:
-guard laya triage "Center checkout button and fix responsive modal CSS"
-```
-**Calibration gate.** Triage uses the neural model only after that exact model file passed `guard laya calibrate` (domain accuracy of at least 70% on the labelled set, recorded in `~/.guard/laya_calibration.json`). Otherwise it uses the sub-1ms keyword reflex engine. On the current `laya-int8` weights the model scores 3/16 (19%, chance level; it returns near-uniform probabilities) against 11/16 for the reflex engine, so the reflex engine is what runs. Laya's triage (intent, risk) is informational: the domain used for invariants and the build command comes from the repository itself.
+**No model download.** Earlier versions shipped the "Laya" neural triage (a 554 MB ONNX model plus numpy, onnxruntime and tokenizers). It only produced informational domain / intent / risk guesses, never changed a gate decision, and scored at chance level, so it was removed in 0.11. If `~/.guard/models` exists from an older version, it can be deleted.
 
 **Repository domain.** The domain is scored from several signals instead of the first marker file found: Node dependencies of every `package.json` (monorepos included), web framework configs, `index.html`, UI component files, `server/`/`api/` directories, Python/Go/Rust/Java manifests, Terraform/Helm/Kubernetes and container files. A Node backend is no longer reported as frontend, an app with a `Dockerfile` is not infra (and is built with its package script, not `docker build`), and a repository with both a web client and a server is `fullstack`.
 
@@ -240,7 +223,7 @@ The older `guard hook install` still works: without options it runs `guard insta
 
 Outside a Git repository only the agent directives apply.
 
-**Refresh after an upgrade.** The first guard command after a version change rewrites what guard owns: the global hooks (when `core.hooksPath` points at `~/.guard/hooks`), guard hooks inside `.git` of recorded repositories, and the directive block between the `LAYA-OCR-GUARD DUAL-GATE HOOK: START/END` markers in your global agent docs (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`, `~/.config/opencode/AGENTS.md`). Agent docs inside repositories are never rewritten; an outdated or unmarked guard section there is reported by the setup check. `guard hook refresh` runs the same refresh on demand.
+**Refresh after an upgrade.** The first guard command after a version change rewrites what guard owns: the global hooks (when `core.hooksPath` points at `~/.guard/hooks`), guard hooks inside `.git` of recorded repositories, and the directive block between the `BANH-MI-GUARD DUAL-GATE HOOK: START/END` markers in your global agent docs (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`, `~/.config/opencode/AGENTS.md`). Agent docs inside repositories are never rewritten; an outdated or unmarked guard section there is reported by the setup check. `guard hook refresh` runs the same refresh on demand.
 ### 2. Pre-Task Phase (`guard pre`)
 Execute before modifying source code:
 ```bash
@@ -286,7 +269,7 @@ Every check runs on the current file contents. `forbid` fails when any matched f
 
 **Rules learned during review.** The LLM gate may propose durable rules it notices in the diff (`INVARIANTS:` section of its answer). Guard writes a proposal into the local `.guard/invariants.json` (never into the repository's file) only when its id and description are new and its check passes on the current code; it is tagged `"origin": "llm:<session>"`, listed under "Invariants learned in this review", and enforced from the next `guard pre`. To share a learned rule with the team, copy it into `guard.invariants.json` yourself. Rejected proposals are listed with the reason.
 
-**The rulebook cannot be weakened as a side effect.** Adding invariants never counts as out of scope. Removing an invariant or changing its checks raises `INV-WEAKENED`: CRITICAL (blocks) unless the task declares `guard.invariants.json` in its scope, in which case it is HIGH and left to the reviewer.
+**The rulebook cannot be weakened as a side effect.** Adding invariants never counts as out of scope. Removing an invariant or changing its checks raises `INV-WEAKENED`: CRITICAL (blocks) unless the task declares `guard.invariants.json` in its scope. A declared edit is reported as MEDIUM for the reviewer, and the locked rules it removes are shown as RETIRED (a changed rule is re-evaluated with its new definition) instead of failing.
 
 ### 3. Post-Task Phase (`guard post`)
 Execute after code modifications are complete:
@@ -366,35 +349,22 @@ Old installations (per-repository hooks, directives pasted without markers, no i
 | Repository agent doc has an older or unmarked guard section | update or remove it yourself (guard does not edit repository files) |
 | Guard directives without START/END markers | wrap the guard section as shown below, or delete it and run `guard install` |
 | No `guard.invariants.json` / invariants without checks | `guard invariants init`, then add checks and run `guard invariants check` |
-| Laya model never calibrated (optional) | `guard laya calibrate` |
+| Old Laya model files left by guard <= 0.10 | delete `~/.guard/models` |
 
 Markers that let guard refresh a pasted directive section:
 ```markdown
-<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: START === -->
+<!-- === BANH-MI-GUARD DUAL-GATE HOOK: START === -->
 ...guard directives...
-<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: END === -->
+<!-- === BANH-MI-GUARD DUAL-GATE HOOK: END === -->
 ```
 
-**After an upgrade nothing has to be done by hand.** `guard update self` starts the newly installed guard to run `guard hook refresh`, which rewrites the global hooks, the guard blocks in recorded repositories' hooks and every directive block between guard markers. If guard was upgraded another way (for example `pipx upgrade`), the first guard command of the new version does the same once. A repository installed by an older version is refreshed the first time guard runs in it. The only manual case is guard directives pasted into an agent doc without the START/END markers: guard reports them (`WARN ...`) and explains how to wrap or reinstall them.
-
-### 7. Laya Neural Engine (`guard laya`)
-Manage the embedded non-autoregressive neural classification model:
-```bash
-# Check Laya cache, model paths, and device:
-guard laya status
-
-# Download standard INT8 neural checkpoint weights (554MB):
-guard laya download
-
-# Run standalone System 1 triage test on a prompt:
-guard laya triage "<prompt>"
-```
+**After an upgrade nothing has to be done by hand.** `guard update self` starts the newly installed guard to run `guard hook refresh`, which rewrites what guard owns: the global hooks, guard hooks inside `.git` of recorded repositories and the marked directive block in your global agent docs (repository files are only reported). If guard was upgraded another way (for example `pipx upgrade`), the first guard command of the new version does the same once. A repository installed by an older version is refreshed the first time guard runs in it. The only manual case is guard directives pasted into an agent doc without the START/END markers: guard reports them (`WARN ...`) and explains how to wrap or reinstall them.
 
 ---
 
 ## 🧪 Running the Test Suite
 
-The project includes a comprehensive end-to-end integration and unit test suite (120+ tests):
+The project includes a comprehensive end-to-end integration and unit test suite (130+ tests):
 ```bash
 pytest
 ```

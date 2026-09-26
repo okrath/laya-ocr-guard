@@ -54,9 +54,9 @@
       "description": "An invariant without an applicable check is UNVERIFIED, never counted as passed, and no fixed confidence is invented.",
       "rationale": "Irrelevant template invariants used to be marked 'Maintained' with a hardcoded 0.92 confidence.",
       "checks": [
-        { "files": "guard/core/laya_engine.py", "require": "STATUS_UNVERIFIED, \"No automated check applies" },
+        { "files": "guard/core/invariant_eval.py", "require": "STATUS_UNVERIFIED, \"No automated check applies" },
         { "files": "guard/core/project_invariants.py", "require": "return STATUS_UNVERIFIED" },
-        { "files": "guard/core/laya_engine.py", "forbid": "confidence=0\\.92" }
+        { "files": "guard/core/invariant_eval.py", "forbid": "confidence=0\\.92" }
       ]
     },
     {
@@ -115,15 +115,6 @@
       "origin": "llm:guard-1790378716"
     },
     {
-      "id": "LAYA-01",
-      "description": "The Laya neural model drives triage only after it passed `guard laya calibrate` for that exact model file.",
-      "rationale": "The int8 weights returned near-uniform probabilities and scored at chance level (19%) while being reported as a neural decision.",
-      "checks": [
-        { "files": "guard/core/laya_engine.py", "require": "neural_is_calibrated\\(get_model_path\\(self\\.model_name\\)\\)" },
-        { "files": "guard/core/laya_calibration.py", "require": "PASS_ACCURACY = 0\\.[5-9]" }
-      ]
-    },
-    {
       "id": "DOMAIN-01",
       "description": "The repository domain is scored from several signals, never taken from the first marker file, and the build command is resolved per ecosystem.",
       "rationale": "First-match detection called Node backends frontend (package.json) and a fullstack app infra (Dockerfile), which also ran `docker build` as the build check.",
@@ -141,15 +132,6 @@
         { "files": "guard/core/repo_setup.py", "require": "if DIRECTIVE_START not in text or DIRECTIVE_END not in text:" },
         { "files": "guard/core/repo_setup.py", "require": "return None  # guard is referenced in some other form" }
       ]
-    },
-    {
-      "id": "LAYA-02",
-      "description": "A calibration record applies only to the exact model file it measured (path, size, mtime); replacing the weights requires re-calibration",
-      "rationale": "Discovered by the LLM gate review",
-      "checks": [
-        { "files": "guard/core/laya_calibration.py", "require": "_model_fingerprint" }
-      ],
-      "origin": "llm:guard-1790387683"
     },
     {
       "id": "INV-03",
@@ -202,15 +184,6 @@
         { "files": "guard/cli.py", "require": "print_setup_health\\(Path\\.cwd\\(\\), \"🧩 Installation & Repository Setup\"\\)" },
         { "files": "guard/cli.py", "require": "print_setup_health\\(target, \"🧩 guard setup check\", only_problems=True\\)" }
       ]
-    },
-    {
-      "id": "CALIBRATION-PATH",
-      "description": "The Laya calibration record is addressed only through `guard_home()`, never through a hardcoded home-directory path",
-      "rationale": "Discovered by the LLM gate review",
-      "checks": [
-        { "files": "guard/core/*.py", "forbid": "Path\\.home\\(\\).*laya_calibration" }
-      ],
-      "origin": "llm:guard-1790391467"
     },
     {
       "id": "UNINSTALL-FORGETS-REGISTRY",

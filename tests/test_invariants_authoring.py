@@ -160,9 +160,25 @@ def test_declared_rulebook_edit_is_reviewed_not_hard_blocked(tmp_path):
     commit_invariants(repo, [{"id": "GONE", "description": "uses fetch", "checks": [{"files": "src/chat.ts", "require": "fetch"}]}])
     assert execute_pre_task("Retire rule GONE", repo_path=repo, scope=["guard.invariants.json"]) is True
     (repo / "guard.invariants.json").write_text(json.dumps({"invariants": []}), encoding="utf-8")
+    (repo / "src" / "chat.ts").write_text("export function send() { return 1; }\n", encoding="utf-8")  # the rule's target changes too
     execute_post_task(repo_path=repo)
     post = SessionManager(repo).load_local_session().post
-    assert [v.severity for v in post.rule_violations if v.rule_id == "INV-WEAKENED"] == ["HIGH"]
+    assert [v.severity for v in post.rule_violations if v.rule_id == "INV-WEAKENED"] == ["MEDIUM"]
+    # The locked rule is judged by the task's explicit decision: retired, not a hard failure
+    check = [c for c in post.invariant_result.checks if c.id == "GONE"][0]
+    assert check.status == "retired" and check.passed
+    assert post.invariant_result.all_passed
+
+
+def test_undeclared_rulebook_edit_still_blocks_on_the_locked_rule(tmp_path):
+    repo = make_repo(tmp_path)
+    commit_invariants(repo, [{"id": "GONE", "description": "uses fetch", "checks": [{"files": "src/chat.ts", "require": "fetch"}]}])
+    assert execute_pre_task("Tweak src/chat.ts", repo_path=repo) is True
+    (repo / "guard.invariants.json").write_text(json.dumps({"invariants": []}), encoding="utf-8")
+    (repo / "src" / "chat.ts").write_text("export function send() { return 1; }\n", encoding="utf-8")
+    assert execute_post_task(repo_path=repo) is False
+    check = [c for c in SessionManager(repo).load_local_session().post.invariant_result.checks if c.id == "GONE"][0]
+    assert check.status == "failed"
 
 
 def test_appending_a_learned_rule_keeps_existing_entries_byte_identical(tmp_path):

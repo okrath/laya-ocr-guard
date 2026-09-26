@@ -1,8 +1,8 @@
 # Architectural Specification: Dual-Gate Safety Harness
 
-> 📦 **GitHub Repository:** [github.com/okrath/laya-ocr-guard](https://github.com/okrath/laya-ocr-guard) &bull; 👤 **Author:** [@okrath](https://github.com/okrath) &bull; 📖 **Live Documentation:** [okrath.github.io/laya-ocr-guard](https://okrath.github.io/laya-ocr-guard/)
+> 📦 **GitHub Repository:** [github.com/okrath/banh-mi-guard](https://github.com/okrath/banh-mi-guard) &bull; 👤 **Author:** [@okrath](https://github.com/okrath) &bull; 📖 **Live Documentation:** [okrath.github.io/banh-mi-guard](https://okrath.github.io/banh-mi-guard/)
 
-`laya-ocr-guard` implements a **Dual-Gate Agentic Architecture** (the Sandwich Pattern) designed to eliminate silent regressions, security violations, and memory leaks when using AI Coding Agents.
+`banh-mi-guard` implements a **Dual-Gate Agentic Architecture** (the Sandwich Pattern) designed to eliminate silent regressions, security violations, and memory leaks when using AI Coding Agents.
 
 ---
 
@@ -12,7 +12,6 @@ The architecture strictly decouples reflexive, deterministic, and generative res
 
 | Component | Nature | Execution Latency | Token Cost | Core Responsibility |
 | :--- | :--- | :--- | :--- | :--- |
-| **Laya** (System 1 Engine) | Transformer classifier (used only after `guard laya calibrate` passes) / keyword reflex engine | <1ms (Reflex) | **0 tokens ($0.00)** | Informational intent and risk triage of the prompt. The current int8 weights fail calibration (chance level), so the reflex engine runs. |
 | **Repository Domain Scorer** | Deterministic signal scoring | <50ms | **0 tokens ($0.00)** | Scores Node dependencies (monorepos included), framework configs, `index.html`, UI files, server/API dirs, language manifests and IaC files to pick frontend / backend / fullstack / infra / mobile. Selects template invariants; the build command is resolved per ecosystem. |
 | **Alibaba Open Code Review (OCR)** | Deterministic AST & Git Diff Inspector | Sub-50ms (Local) | **0 tokens ($0.00)** | Precise git diff measurement, blast-radius enforcement (out-of-scope breach detection), and multi-language deterministic static rules. |
 | **Hygiene Engine** | AST & Reference Reachability Scanner | <50ms (Diff) / <2s (Full) | **0 tokens ($0.00)** | Two-tier dead code detection: catches orphan/draft files (DEAD-001), commented-out code blocks (DEAD-002), and AST unreferenced symbols/imports (DEAD-003). |
@@ -31,7 +30,7 @@ The architecture strictly decouples reflexive, deterministic, and generative res
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ 1. PRE-TASK PHASE: `guard pre "<prompt>"`                   │
-│ • Laya (<30ms, 0-cost): Intent, domain & risk triage        │
+│ • Scope declaration & repository domain detection           │
 │ • Domain Contract Extractor (FE / BE / Infra / MB)          │
 │ • Lock Invariant Rules (Must NOT be broken)                 │
 │ ➔ Emits: "### 🔍 PRE-TASK IMPACT NOTE"                      │
@@ -73,4 +72,4 @@ The Git `pre-commit` hook runs `guard post --hook` on every commit. Without a gu
 For external CI/CD pipelines or headless scripts, `guard run "<prompt>" -- <command>` enforces the complete sandwich sequence as a single atomic process.
 
 ---
-*Created and maintained by [@okrath](https://github.com/okrath) &mdash; Source code available at [github.com/okrath/laya-ocr-guard](https://github.com/okrath/laya-ocr-guard).*
+*Created and maintained by [@okrath](https://github.com/okrath) &mdash; Source code available at [github.com/okrath/banh-mi-guard](https://github.com/okrath/banh-mi-guard).*

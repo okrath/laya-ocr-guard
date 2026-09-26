@@ -16,7 +16,7 @@ def test_is_junk_filename():
     assert engine.is_junk_filename("src/copy_of_header.ts") is True
 
     assert engine.is_junk_filename("src/components/Header.tsx") is False
-    assert engine.is_junk_filename("guard/core/laya_engine.py") is False
+    assert engine.is_junk_filename("guard/core/invariant_eval.py") is False
 
 
 def test_is_entrypoint_or_whitelisted():

@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from guard.core.laya_engine import DomainType
+from guard.core.invariant_eval import DomainType
 from guard.core.project_invariants import load_project_invariants
 from guard.core.session import DomainContract, LockedInvariant
 from guard.domains.backend import BackendDomainAnalyzer

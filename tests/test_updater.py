@@ -114,13 +114,13 @@ def test_perform_ocr_upgrade_force_allowed():
 def test_check_guard_self_update_newer(tmp_path):
     mock_res = MagicMock()
     mock_res.status_code = 200
-    mock_res.text = '[project]\nname = "laya-ocr-guard"\nversion = "9.9.9"\n'
+    mock_res.text = '[project]\nname = "banh-mi-guard"\nversion = "9.9.9"\n'
 
     dummy_cache = tmp_path / "cache.json"
     with patch("httpx.Client.get", return_value=mock_res), \
          patch("guard.core.updater.get_update_cache_path", return_value=dummy_cache):
         res = check_guard_self_update(force=True)
-        assert res.package_name == "laya-ocr-guard"
+        assert res.package_name == "banh-mi-guard"
         assert res.latest_version == "9.9.9"
         assert res.status == UpdateSecurityStatus.SAFE_UPDATE_AVAILABLE
         assert "New version" in res.recommendation
@@ -129,7 +129,7 @@ def test_check_guard_self_update_newer(tmp_path):
 def test_check_guard_self_update_up_to_date(tmp_path):
     mock_res = MagicMock()
     mock_res.status_code = 200
-    mock_res.text = '[project]\nname = "laya-ocr-guard"\nversion = "0.1.0"\n'
+    mock_res.text = '[project]\nname = "banh-mi-guard"\nversion = "0.1.0"\n'
 
     dummy_cache = tmp_path / "cache.json"
     with patch("httpx.Client.get", return_value=mock_res), \
@@ -146,7 +146,7 @@ def test_get_cached_update_notice(tmp_path):
     dummy_cache.write_text(json.dumps({
         "timestamp": 9999999999.0,
         "result": {
-            "package_name": "laya-ocr-guard",
+            "package_name": "banh-mi-guard",
             "registry": "github",
             "installed_version": "0.1.0",
             "latest_version": "9.9.9",
@@ -168,7 +168,7 @@ def test_perform_self_upgrade_pipx():
     mock_proc = MagicMock()
     mock_proc.returncode = 0
 
-    with patch("sys.prefix", "C:/Users/Admin/.local/pipx/venvs/laya-ocr-guard"), \
+    with patch("sys.prefix", "C:/Users/Admin/.local/pipx/venvs/banh-mi-guard"), \
          patch("shutil.which", return_value="C:/pipx/pipx.exe"), \
          patch("subprocess.run", return_value=mock_proc) as mock_run:
         success, msg = perform_self_upgrade()

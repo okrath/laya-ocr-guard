@@ -2,7 +2,7 @@
 Unit tests for Domain Analyzers and Automatic Detector.
 """
 
-from guard.core.laya_engine import DomainType
+from guard.core.invariant_eval import DomainType
 from guard.domains.backend import BackendDomainAnalyzer
 from guard.domains.detector import (
     detect_build_command,

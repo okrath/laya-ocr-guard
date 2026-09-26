@@ -1,6 +1,6 @@
 """
-Laya OCR Guard (guard)
+Banh Mi Guard (guard)
 Dual-gate impact analysis & regression guard.
 """
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 __app_name__ = "guard"

@@ -4,7 +4,7 @@ Unit tests for LLM Reviewer Engine (Final Safety Gate).
 
 import pytest
 
-from guard.core.laya_engine import DomainType, InvariantCheck, LayaInvariantResult
+from guard.core.invariant_eval import DomainType, InvariantCheck, InvariantResult
 from guard.core.llm_reviewer import LLMReviewerEngine, ReviewVerdict
 from guard.core.ocr_engine import DiffSummary, FileDiffStat, RuleViolation
 from guard.core.session import BuildCheckResult
@@ -29,7 +29,7 @@ def test_reviewer_approve_clean_task(reviewer):
         total_deletions=2,
         out_of_scope_files=[],
     )
-    inv_res = LayaInvariantResult(
+    inv_res = InvariantResult(
         all_passed=True,
         checks=[InvariantCheck(id="FE-INV-01", description="Keep loading state", passed=True, confidence=0.95)],
         ui_regression_risk=False,
@@ -192,3 +192,35 @@ def test_reviewer_simplicity_focus_and_net_loc(reviewer):
     assert focus_verdict.verdict == ReviewVerdict.REVISE
     assert focus_verdict.focus_area == "simplicity"
     assert any("LAZY-001" in step for step in focus_verdict.remediation_steps)
+
+
+def _llm_config():
+    from guard.core.config import GuardConfig, LLMConfig
+    return GuardConfig(llm=LLMConfig(base_url="http://127.0.0.1:9/v1", api_key="k", model="m"))
+
+
+def test_unparseable_llm_answer_is_retried_once():
+    from unittest.mock import patch
+
+    answers = iter(["I think this looks fine overall.", "SCORE: 8.5\nVERDICT: APPROVED\nSUMMARY: ok"])
+    with patch("guard.core.llm_reviewer.call_llm", side_effect=lambda **kw: next(answers)) as llm:
+        verdict = LLMReviewerEngine(config=_llm_config()).review(prompt="p", domain=DomainType.BACKEND)
+    assert llm.call_count == 2 and verdict.review_mode == "llm_deep" and verdict.score == 8.5
+
+
+def test_refusal_is_reported_as_such():
+    from unittest.mock import patch
+
+    refusal = "Sorry, I can't help you with this request at the moment."
+    with patch("guard.core.llm_reviewer.call_llm", return_value=refusal):
+        verdict = LLMReviewerEngine(config=_llm_config()).review(prompt="p", domain=DomainType.BACKEND)
+    assert verdict.review_mode == "heuristic"
+    assert "part 1/1 answer was not a review" in verdict.llm_error and "Sorry" in verdict.llm_error
+
+
+def test_deleted_files_are_sent_as_a_one_line_note():
+    diff = ("diff --git a/old.py b/old.py\ndeleted file mode 100644\n--- a/old.py\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-a\n-b\n-c\n"
+            "diff --git a/kept.py b/kept.py\n--- a/kept.py\n+++ b/kept.py\n@@ -1 +1 @@\n-x = 1\n+x = 2\n")
+    batch = LLMReviewerEngine()._prepare_diff_batches(DiffSummary(raw_diff=diff))[0]
+    assert "[file deleted: 3 lines removed; content omitted]" in batch
+    assert "-a\n" not in batch and "+x = 2" in batch

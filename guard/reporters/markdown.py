@@ -1,5 +1,5 @@
 """
-Markdown Reporter for Laya-OCR-Guard.
+Markdown Reporter for Banh-Mi-Guard.
 Generates standardized Markdown notes strictly matching the dual-gate protocol:
 - `### 🔍 PRE-TASK IMPACT NOTE:`
 - `### 🧪 POST-TASK VERIFICATION:`
@@ -11,7 +11,7 @@ from typing import Optional
 
 from guard.core.session import PostTaskRecord, PreTaskRecord
 
-INVARIANT_ICONS = {"passed": "✅", "failed": "❌", "unverified": "⚪", "baseline_failed": "⚠️"}
+INVARIANT_ICONS = {"passed": "✅", "failed": "❌", "unverified": "⚪", "baseline_failed": "⚠️", "retired": "🗑️"}
 
 
 def restart_lines(pre: PreTaskRecord) -> list:
@@ -35,9 +35,7 @@ def generate_pre_task_markdown(pre: PreTaskRecord) -> str:
     md = []
     md.append("### 🔍 PRE-TASK IMPACT NOTE:\n")
     md.append(f"* **Task Request:** {pre.prompt}")
-    hint = f", prompt triage guessed {pre.triage_domain.upper()}" if pre.triage_domain and pre.triage_domain != pre.domain.value else ""
-    md.append(f"* **Technical Domain:** {pre.domain.value.upper()} (detected from repository{hint}; Intent: {pre.intent.value})")
-    md.append(f"* **Risk Assessment (Laya System 1):** {pre.risk_score_label} {'⚠️ [CORE BREACH DETECTED]' if pre.core_breach_risk else '✅ [Standard Scope]'}")
+    md.append(f"* **Technical Domain:** {pre.domain.value.upper()} (detected from repository)")
     
     # Baseline
     md.append("\n* **Current Baseline Contracts:**")
