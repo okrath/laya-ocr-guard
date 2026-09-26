@@ -1,99 +1,104 @@
-# The 2D Quality Matrix: Platform Domains × Quality Pillars
+# Quality Pillars: What Guard Checks, and How
 
 > 📦 **GitHub Repository:** [github.com/okrath/banh-mi-guard](https://github.com/okrath/banh-mi-guard) &bull; 👤 **Author:** [@okrath](https://github.com/okrath) &bull; 📖 **Live Documentation:** [okrath.github.io/banh-mi-guard](https://okrath.github.io/banh-mi-guard/)
 
-`guard` evaluates code safety across a two-dimensional matrix combining **4 Platform Domains** with **6 Cross-Cutting Quality Pillars**.
+`guard` looks at a change through several quality pillars. Each concern below is covered in one of three ways, and this page says which:
+
+| How | What it means |
+| :--- | :--- |
+| **Rule** | A deterministic check on the diff or the repository, with a rule ID. It runs on every `guard post`, costs no tokens, and its findings are listed in the report. |
+| **Project invariant** | A regex check you (or the LLM gate, locally) wrote in `guard.invariants.json` / `.guard/invariants.json`. Evaluated on the current files at pre and post. |
+| **LLM review** | Something the configured LLM is asked to look at in the diff (the default 360° audit, or a `--focus` area). Not a deterministic check. |
+
+When a repository has no project invariants, guard adds a few generic **template invariants** for the detected domain (frontend, backend, fullstack, infra, mobile). Most of them are only heuristics on the diff and are reported as `UNVERIFIED` when no heuristic applies.
 
 ---
 
-## 1. Matrix Overview
+## 1. 🛡️ Security & Secrets
 
-```text
-                           QUALITY PILLARS (Cross-Cutting Concerns)
-                 ┌──────────────┬──────────────┬──────────────┬──────────────┬──────────────┐
-                 │ 🛡️ Security  │ 🧠 Memory    │ ⚡ Performance│ 🧱 Integrity │ ♿ UX/Ergo    │
-                 │ & Secrets    │ & Leaks      │ & Latency    │ & Contracts  │ & a11y       │
-  ┌──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┤
-  │ 🌐 Frontend  │ XSS, CSP     │ Listeners,   │ Bundle size, │ State        │ Responsive,  │
-P │              │ token leaks  │ DOM detached │ re-renders   │ invariants   │ Escape, IME  │
-L ├──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┤
-A │ ⚙️ Backend   │ SQLi, Auth,  │ Connections, │ N+1 queries, │ JSON Schema, │ Standard err │
-T │              │ RBAC, IDOR   │ goroutine/mem│ async blocks │ ACID trans   │ status codes │
-F ├──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┤
-O │ ☁️ Infra/Dev │ Public ports,│ Container    │ Startup time,│ Zero-downtime│ Healthcheck  │
-R │              │ root secrets │ OOM limits   │ image bloat  │ IaC drift    │ readiness    │
-M ├──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┤
-  │ 📱 Mobile    │ SecureStore, │ Native bridge│ FPS drops,   │ Offline sync,│ SafeArea,    │
-  │              │ permissions  │ Bitmap leaks │ battery drain│ SQLite ACID  │ dynamic notch│
-  └──────────────┴──────────────┴──────────────┴──────────────┴──────────────┴──────────────┘
-```
+| Concern | How | ID |
+| :--- | :--- | :--- |
+| Hardcoded API keys, tokens, passwords in added lines | Rule | `SEC-001` (CRITICAL) |
+| SQL built by string concatenation | Rule | `SEC-002` (CRITICAL) |
+| Unsanitized HTML sinks: `innerHTML`/`outerHTML` `=` and `+=`, `dangerouslySetInnerHTML`, `v-html`. A comment mentioning "sanitize" does not exempt a line; only an empty literal, a single `DOMPurify.sanitize(...)` value or `// guard-allow SEC-003: <reason>` (listed as LOW) does | Rule | `SEC-003` (HIGH) |
+| Auth, RBAC, IDOR, public ports, secrets in manifests | LLM review (`--focus security`); template invariants for backend/infra | — |
 
----
+## 2. 🧠 Memory Safety & Resource Leaks
 
-## 2. The 5 Quality Pillars Detailed
+| Concern | How | ID |
+| :--- | :--- | :--- |
+| Global `resize`/`scroll`/`mousemove`/`keydown` listener added with no `removeEventListener` in the diff | Rule | `PERF-001` (HIGH) |
+| Unclosed streams, sockets, DB connections; retained closures; DOM leaks | LLM review (`--focus memory`) | — |
 
-### Pillar 1: 🛡️ Security & Secret Hygiene
-- **Secret Detection (`SEC-001`)**: Scans git diffs for API keys, private keys, passwords, and sensitive tokens.
-- **SQL Injection Prevention (`SEC-002`)**: Detects raw SQL string concatenations and demands parameterized queries or ORM models.
-- **Cross-Site Scripting Prevention (`SEC-003`)**: Flags unsanitized HTML injections (`dangerouslySetInnerHTML`, `innerHTML`, `v-html`).
-- **Network Interface Protection**: Forbids binding internal database ports (PostgreSQL, Redis, MongoDB) to public `0.0.0.0/0`.
+## 3. ⚡ Performance & Latency
 
-### Pillar 2: 🧠 Memory Safety & Resource Leaks
-- **Dangling Event Listeners (`PERF-001`)**: Detects global window/document event listeners added inside React/Vue components without corresponding unmount removal handlers.
-- **Unclosed Resource Handles**: Verifies file streams, database connections, and network sockets are closed or managed via RAII / `with` constructs.
-- **Native Mobile Retain Cycles**: Audits mobile view controllers and unmanaged Bitmaps.
+| Concern | How | ID |
+| :--- | :--- | :--- |
+| Blocking sync I/O (`readFileSync`, `writeFileSync`, `execSync`, `spawnSync`) in JS/TS | Rule | `PERF-002` (MEDIUM) |
+| N+1 queries, excessive re-renders, thread lockups | LLM review (`--focus performance`) | — |
 
-### Pillar 3: ⚡ Performance & Low Latency
-- **Blocking Synchronous I/O (`PERF-002`)**: Flags blocking sync operations (`readFileSync`, `execSync`) on event loops or async worker threads.
-- **Re-render Throttling**: Checks for unbounded re-renders and missing debounce on high-frequency UI events.
-- **Database Query Efficiency**: Audits N+1 query patterns in database layers.
+## 4. 🧱 Integrity, Scope & Contracts
 
-### Pillar 4: 🧱 Data Integrity & Schema Compatibility
-- **Backwards Compatibility**: Guarantees existing API JSON response schemas do not break downstream mobile and web clients.
-- **Atomic Mutations**: Ensures multi-table database operations are encapsulated in database transactions with rollback support.
+| Concern | How | ID |
+| :--- | :--- | :--- |
+| Files changed outside the declared scope | Scope audit (marked OUT-OF-SCOPE; blocks) | `SCOPE-001` in `guard review` |
+| File deleted (confirm the task asked for it) | Rule | `SCOPE-002` (MEDIUM) |
+| Files already modified before pre (`--allow-dirty`) | Rule | `SCOPE-003` |
+| File covered only by scope added in a `--force` restart | Rule | `SCOPE-004` (HIGH) |
+| Project rules (behavior that must not break) | Project invariant | your IDs |
+| Invariants file removed or relaxed; malformed invariants file | Rule | `INV-WEAKENED`, `INV-FILE` |
+| Deep property access without optional chaining (`a.b.c.d`) | Rule | `STAB-001` (MEDIUM) |
+| API schema compatibility, atomic multi-table writes | LLM review; backend template invariants (UNVERIFIED) | — |
+| The project still builds / tests pass | Build command (`pnpm run build`, `pytest`, `go test ./...`, ...) | build check (blocks on failure) |
 
-### Pillar 5: ♿ Ergonomics & UX Accessibility
-- **Keyboard Navigation**: Preserves standard keyboard interactions (`Escape` to close modals, `Enter` to submit, `ArrowUp/Down` to navigate history).
-- **Responsive Layout**: Verifies CSS layouts adapt across Mobile (390px), Tablet, and Desktop (1440px) without horizontal scrollbar overflow.
-- **Visual Feedback**: Enforces visual state feedback (spinners, skeletons, disabled states) during asynchronous operations.
+## 5. ♿ Ergonomics & UX
 
-### Pillar 6: 🧹 Code & Asset Hygiene (Dead Code Gate)
-- **Orphan & Draft Files (`DEAD-001`)**: Detects unreferenced newly added files and scratchpad artifacts (`*.tmp`, `*backup*`, `temp_*`).
-- **Commented-out Code (`DEAD-002`)**: Detects stale blocks of commented-out source code (3+ lines) instead of clean Git deletions.
-- **Unused Local Helpers & Imports (`DEAD-003`)**: Flags unreferenced private helper functions and unused imported symbols.
+| Concern | How | ID |
+| :--- | :--- | :--- |
+| Removed keyboard handlers (`keydown`, `'Escape'`, `keyCode 27`) when a template invariant asks to keep them | Template invariant heuristic | frontend template |
+| Responsive layout, focus handling, visual feedback, modal dismissal | LLM review (`--focus ux`) | — |
 
-### Pillar 7: 🛋️ Simplicity & Engineering Frugality (KISS & YAGNI)
+## 6. 🧹 Code & Asset Hygiene (Dead Code Gate)
+
+| Concern | How | ID |
+| :--- | :--- | :--- |
+| New files that nothing references, draft names (`*.tmp`, `*backup*`, `temp_*`) | Rule | `DEAD-001` |
+| 3+ consecutive lines of commented-out code | Rule | `DEAD-002` |
+| Unused private helpers and imports (AST, with `--focus dead-code`) | Rule | `DEAD-003` |
+| A removed string key (`case 'edit':`), export or CSS class that is still referenced somewhere in the repository | Rule | `DEAD-REF` (HIGH) |
+
+## 7. 🛋️ Simplicity (KISS & YAGNI)
+
 *Inspired by Larry Wall's virtue of Laziness and Dietrich Gebert's Ponytail philosophy: "The best code is the code you never wrote."*
-- **The Ponytail Necessity Ladder**: Enforces evaluating tasks strictly from YAGNI (don't write code) ➔ Reuse existing code ➔ Use stdlib/native runtime ➔ Use installed dependencies ➔ Minimal one-liner code.
-- **Dependency Bloat Prevention (`LAZY-001`)**: Detects adding redundant npm or Python packages (`is-odd`, `uuid`, `mkdirp`, `rimraf`, `pathlib2`, `mock`) when native browser/Node or Python stdlib suffices.
-- **Premature Abstraction Prevention (`LAZY-002`)**: Flags single-use interfaces, over-engineered class hierarchies, and trivial pass-through wrapper functions.
-- **Wheel Reinvention Prevention (`LAZY-003`)**: Warns against re-implementing common utilities (`clamp`, `slugify`, `is_empty`, `flatten`, `deep_clone`) when stdlib or 1-liners suffice.
-- **Net LOC (informational)**: The report shows net lines added or removed. Deleting code earns no score bonus; removals are instead checked for live references (`DEAD-REF`).
+
+| Concern | How | ID |
+| :--- | :--- | :--- |
+| Redundant packages (`is-odd`, `uuid`, `mkdirp`, `rimraf`, `pathlib2`, `mock`) when stdlib or the runtime suffices | Rule | `LAZY-001` |
+| Single-use interfaces, pass-through wrappers, deep class hierarchies | Rule | `LAZY-002` |
+| Re-implemented utilities (`clamp`, `slugify`, `is_empty`, `flatten`, `deep_clone`) | Rule | `LAZY-003` |
+| Net lines added or removed | Informational only (deleting code earns no score bonus) | `NET-LOC` |
 
 ---
 
-## 3. Scrutiny Focus Flag (`--focus`)
+## Scoring and the final verdict
 
-By default, Guard verifies quality pillars simultaneously (`--focus all`). To instruct the LLM Gatekeeper to conduct a specialized deep-dive:
+- **Blocks outright** (no LLM can approve): a failed build, a violated invariant, a CRITICAL rule, a file out of scope, and in `--focus dead-code` / `--focus simplicity` any finding of that pillar.
+- Otherwise the heuristic score starts at 10 and loses points for HIGH findings (and, lightly, for hygiene and simplicity findings); below 7.5 the heuristic verdict is REVISE.
+- The configured LLM then reviews the report, the verified evidence and the diff (in parts when it is large) and gives the final `APPROVED` / `REVISE`. If it does not answer, the report says "Heuristic Gate (no LLM review)" and why.
+
+## Focus flag (`--focus`)
+
+By default the LLM runs a 360° audit (`--focus all`). A focus narrows the review, and for `dead-code` and `simplicity` also makes that pillar's rules blocking:
 
 ```bash
-# Deep-dive on KISS, YAGNI, over-engineering & dependency bloat:
-guard review --focus simplicity
-
-# Deep-dive on dead code, zombie blocks & orphan files:
-guard review --focus dead-code
-
-# Deep-dive on memory leaks & resource cleanup:
-guard review --focus memory
-
-# Deep-dive on security vulnerabilities & secret leaks:
-guard review --focus security
-
-# Deep-dive on blocking I/O and latency:
-guard review --focus performance
-
-# Deep-dive on responsive UX and keyboard shortcuts:
-guard review --focus ux
+guard post --focus security      # injection, secrets, CSRF, auth bypass
+guard post --focus memory        # listeners, unclosed resources, leaks
+guard post --focus performance   # blocking I/O, N+1, re-renders
+guard post --focus ux            # keyboard, modals, responsiveness, feedback
+guard post --focus dead-code     # orphans, commented code, unused symbols (full-file AST scan)
+guard post --focus simplicity    # over-engineering, bloat, reinvented wheels
 ```
+The same `--focus` values work with `guard review`.
+
 ---
 *Created and maintained by [@okrath](https://github.com/okrath) &mdash; Source code available at [github.com/okrath/banh-mi-guard](https://github.com/okrath/banh-mi-guard).*

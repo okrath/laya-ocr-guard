@@ -62,7 +62,7 @@ Automates and enforces the rigorous **Impact & Regression Protocol** pioneered i
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ 3. FINAL SAFETY GATE: YOUR CONFIGURED LLM                   │
-│ (Claude-3.7-Sonnet / GPT-4o / DeepSeek / Ollama...)         │
+│ (Claude / GPT / DeepSeek / Ollama / OpenAI-compatible)      │
 │ • Reviews the report, verified evidence & batched diff      │
 │ • Technical Audit (Architecture, Memory Leaks, Scope)       │
 │ • Cross-Platform UX/UI & Ergonomics Assessment              │
@@ -106,8 +106,6 @@ pip install -e .
 
 **No model download.** Earlier versions shipped the "Laya" neural triage (a 554 MB ONNX model plus numpy, onnxruntime and tokenizers). It only produced informational domain / intent / risk guesses, never changed a gate decision, and scored at chance level, so it was removed in 0.11. If `~/.guard/models` exists from an older version, it can be deleted.
 
-**Repository domain.** The domain is scored from several signals instead of the first marker file found: Node dependencies of every `package.json` (monorepos included), web framework configs, `index.html`, UI component files, `server/`/`api/` directories, Python/Go/Rust/Java manifests, Terraform/Helm/Kubernetes and container files. A Node backend is no longer reported as frontend, an app with a `Dockerfile` is not infra (and is built with its package script, not `docker build`), and a repository with both a web client and a server is `fullstack`.
-
 ### Optional: Install Alibaba OCR CLI
 `guard` bundles a built-in deterministic diff inspector and multi-language rules engine (0-cost). If you also want to enable the official Alibaba OCR CLI tool:
 ```bash
@@ -130,8 +128,8 @@ guard config llm
 ```
 
 The interactive wizard supports two industry-standard protocols:
-1. **OpenAI / OpenAI-Compatible**: OpenAI (`gpt-4o`), **Ollama** (`http://localhost:11434/v1`), **DeepSeek** (`https://api.deepseek.com/v1`), OpenRouter, vLLM, or Local Gateways (`http://127.0.0.1:8090/v1`).
-2. **Anthropic**: Claude API (`claude-3-7-sonnet`).
+1. **OpenAI / OpenAI-Compatible**: OpenAI, **Ollama** (`http://localhost:11434/v1`), **DeepSeek** (`https://api.deepseek.com/v1`), OpenRouter, vLLM, or Local Gateways (`http://127.0.0.1:8090/v1`).
+2. **Anthropic**: Claude API (any current Claude model id).
 
 Verify connectivity with an instant, token-free latency ping:
 ```bash
@@ -140,16 +138,21 @@ guard config test
 
 ---
 
-## 🌐 Multi-Domain Coverage (FE, BE, Infra, MB)
+## 🌐 Multi-Domain Coverage (FE, BE, Fullstack, Infra, MB)
 
-`guard` automatically detects the repository's technology stack and applies domain-specific contracts:
+`guard` detects the repository's domain from the repository itself, scoring several signals instead of taking the first marker file: Node dependencies of every `package.json` (monorepos included), web framework configs, `index.html`, UI component files, `server/`/`api/` directories, Python/Go/Rust/Java manifests, Terraform/Helm/Kubernetes and container files. A Node backend is not reported as frontend, an app with a `Dockerfile` is not infra, and a repository with both a web client and a server is `fullstack`.
 
-| Domain | Tech Stacks | Baseline Contracts & Invariants | Automated Verification |
+The domain selects the **template invariants** used when the repository has no project invariants (most of them are diff heuristics and show as `UNVERIFIED`). The build command is chosen per ecosystem, not per domain:
+
+| Domain | Typical stacks | Template invariants (only without project invariants) | Build / test command guard runs |
 | :--- | :--- | :--- | :--- |
-| **FE** (Frontend) | React, Next.js, Vue, Tailwind, Svelte | UI states (`loading`, `disabled`), keyboard shortcuts (`Escape`, `Enter`), responsive layouts | `pnpm run build` / `npm run build` |
-| **BE** (Backend) | Go, Python (FastAPI/Django), NestJS, Rust | API JSON schema backwards-compatibility, SQLi prevention, atomic DB transactions | `pytest`, `go test ./...`, `cargo test` |
-| **Infra** (DevOps) | Docker, Kubernetes, Terraform, Helm, CI/CD | Forbid hardcoded secrets, forbid 0.0.0.0 binding on internal DBs, zero-downtime healthchecks | `terraform validate`, `docker compose config` |
-| **MB** (Mobile) | Flutter, React Native, iOS (Swift), Android | Hardware permission flows, SafeArea notch boundaries, offline cache fallback | `flutter analyze`, `./gradlew test` |
+| **FE** (Frontend) | React, Next.js, Vue, Svelte, Vite | loading / disabled states, keyboard shortcuts (`Escape`, `Enter`), responsive layout | `<pm> run build` (or `check`, else `<pm> test`) |
+| **BE** (Backend) | Go, Python, Node APIs (Fastify, Express, NestJS), Rust | JSON schema compatibility, parameterized SQL, atomic DB transactions | `go test ./...`, `cargo test`, `pytest`, or the package script for Node |
+| **Fullstack** | web client + server in one repository or monorepo | frontend templates | the package script |
+| **Infra** (DevOps) | Terraform, Helm, Kubernetes (IaC-only repositories) | no hardcoded secrets, no 0.0.0.0 DB binding, health checks | `terraform validate`, `docker compose config` |
+| **MB** (Mobile) | Flutter, React Native, iOS, Android | permission flows, SafeArea, offline fallback | `flutter analyze`, `./gradlew test` |
+
+`<pm>` is `pnpm`, `yarn`, `bun` or `npm`, from the lockfile. See [docs/quality-pillars.md](docs/quality-pillars.md) for what each rule actually checks.
 
 ---
 
@@ -212,7 +215,7 @@ guard hook refresh
 
 The older `guard hook install` still works: without options it runs `guard install`, and its options (`--stealth`, `--mode`, `--all-repos`, `--select-repos`, `--global`) keep their previous per-repository behavior. `guard hook status` shows the current hooks and directives.
 
-> 🔒 **Strict Safe-Append Policy:** Guard NEVER overwrites existing user `CLAUDE.md` or `AGENT.md` directives. It creates a `.guard.bak` backup and cleanly appends Guard protocol markers. Uninstallation cleanly restores user files.
+> 🔒 **Safe-append for the agent docs guard is asked to write.** `guard install` (your global agent docs), `guard install --workspace` (only docs Git does not track) and the legacy `guard hook install --mode agent|all` append a marked block and keep your content, with a one-time `.guard.bak` backup. Uninstall removes only the marked block.
 
 > 🧾 **Guard never creates a diff in your repository.** Inside a repository it writes only where Git tracks nothing: the `.git` directory and the `.guard/` folder, which it keeps out of Git through `.git/info/exclude` (never through `.gitignore`). Files that belong to the repository (agent docs, hooks kept in the tree such as `.husky/`, `guard.invariants.json`) are only read. When one of them needs a change, `guard doctor` tells you what to change; you decide.
 
@@ -224,6 +227,7 @@ The older `guard hook install` still works: without options it runs `guard insta
 Outside a Git repository only the agent directives apply.
 
 **Refresh after an upgrade.** The first guard command after a version change rewrites what guard owns: the global hooks (when `core.hooksPath` points at `~/.guard/hooks`), guard hooks inside `.git` of recorded repositories, and the directive block between the `BANH-MI-GUARD DUAL-GATE HOOK: START/END` markers in your global agent docs (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`, `~/.config/opencode/AGENTS.md`). Agent docs inside repositories are never rewritten; an outdated or unmarked guard section there is reported by the setup check. `guard hook refresh` runs the same refresh on demand.
+
 ### 2. Pre-Task Phase (`guard pre`)
 Execute before modifying source code:
 ```bash
@@ -233,13 +237,12 @@ guard pre "Refactor checkout button to sticky bottom on mobile, update CSS and r
 guard pre "Review and fix bugs in the chat UI" --scope src/ui --scope src/ai/service.ts
 ```
 A directory scope (`src/ui`) covers everything below it. Prefer it over `"src/ui/**"` on Windows, where the `guard.exe` launcher expands glob arguments even when they are quoted.
-*Output:* Analyzes risk, locks baseline invariants, and generates `### 🔍 PRE-TASK IMPACT NOTE` in `.guard/PRE_TASK_NOTE.md`.
+*Output:* Records the scope, the base commit (and a baseline snapshot with `--allow-dirty`), detects the repository domain, locks the invariants and evaluates them once as a baseline, and writes `### 🔍 PRE-TASK IMPACT NOTE` to `.guard/PRE_TASK_NOTE.md`.
 
 Gate rules that keep the pre-task gate meaningful:
-- The domain comes from the repository files; the prompt triage is only shown as a hint.
 - Scope is only what the prompt names or `--scope` declares. Files that are already dirty are never added to it. With no scope, the post report says scope was not audited instead of flagging every file.
 - A dirty working tree is refused. `--allow-dirty` records those files as a pre-existing baseline and snapshots them with `git stash create` (pinned at `refs/guard/baseline`; the working tree is not touched). Post then reviews only the edits made after pre (diff against the snapshot), marks untouched files `PRE-EXISTING`, and raises `SCOPE-003` as a MEDIUM notice.
-- An unfinished (pre without post) or rejected (`REVISE`) session is refused. `--force` restarts it but keeps its baseline, snapshot, base commit and scope. The restart is listed in both reports, and files covered only by scope added in the restart fail as `SCOPE-004`. Stashing, restarting and popping, or committing mid-task, is still audited, because post diffs against the base commit recorded at the first pre.
+- An unfinished (pre without post) or rejected (`REVISE`) session is refused. `--force` restarts it but keeps its baseline, snapshot, base commit, scope and locked invariants. The restart is listed in both reports, and files covered only by scope added in the restart fail as `SCOPE-004`. Stashing, restarting and popping, or committing mid-task, is still audited, because post diffs against the base commit recorded at the first pre.
 - Paths come from `git status --porcelain -z`, so renamed files and names with spaces or Vietnamese characters are tracked correctly. Globs are accepted only via `--scope`: prose such as "do not edit *.css" never widens scope.
 
 #### Project invariants (`guard.invariants.json`)
@@ -285,7 +288,7 @@ guard post --focus simplicity
 ```
 *Output:* Inspects git diff, detects out-of-scope and deleted files, scans Alibaba OCR rules and code hygiene, executes the build command, runs invariant checks, and requests **Final Gate Approval from your configured LLM** (`APPROVED` or `REVISE`) in `.guard/POST_TASK_REPORT.md`.
 
-The report names the gate that actually ran. It says "LLM Gate" only when the LLM answered. Otherwise it says "Heuristic Gate (no LLM review)" and records the failure reason (`llm_error`, `review_mode` in `.guard/session.json`). A review request waits at least 180 s, whatever `llm.timeout` is (that value is sized for `guard config test` pings). Deleting code earns no score bonus.
+The report names the gate that actually ran. It says "LLM Gate" only when the LLM answered. Otherwise it says "Heuristic Gate (no LLM review)" and records the reason (`llm_error`, `review_mode` in `.guard/session.json`), for example a timeout or a model that refused to review a part. A heuristic REVISE (failed build, violated invariant, CRITICAL rule, out-of-scope file, or a score below 7.5) is final; otherwise the LLM decides. Large diffs are reviewed in parts of up to 80k characters (one REVISE rejects the whole diff); deleted files are sent as a one-line note; an answer that ignores the SCORE/VERDICT format is retried once. A review request waits at least 180 s, whatever `llm.timeout` is (that value is sized for `guard config test` pings). Deleting code earns no score bonus.
 
 Removals that a compiler cannot see are checked over the whole repository: every string key (`case 'edit':`), export and CSS class deleted by the diff is searched for. One that is no longer defined but still referenced raises `DEAD-REF` (HIGH) with the locations. The summary line goes into every LLM review part as verified evidence, so a batched review does not have to guess about references in another part.
 
@@ -334,7 +337,7 @@ guard doctor
 ```
 
 #### Upgrading from an older version
-Old installations (per-repository hooks, directives pasted without markers, no invariants file) keep working, and guard tells you what is still missing:
+Guard tells you what is still missing after an upgrade:
 
 - `guard update self` runs `guard hook refresh` with the new version and then prints a **setup check** listing each missing item and the command that fixes it.
 - If guard was upgraded another way, the first guard command of the new version prints the same check once.
@@ -358,13 +361,19 @@ Markers that let guard refresh a pasted directive section:
 <!-- === BANH-MI-GUARD DUAL-GATE HOOK: END === -->
 ```
 
-**After an upgrade nothing has to be done by hand.** `guard update self` starts the newly installed guard to run `guard hook refresh`, which rewrites what guard owns: the global hooks, guard hooks inside `.git` of recorded repositories and the marked directive block in your global agent docs (repository files are only reported). If guard was upgraded another way (for example `pipx upgrade`), the first guard command of the new version does the same once. A repository installed by an older version is refreshed the first time guard runs in it. The only manual case is guard directives pasted into an agent doc without the START/END markers: guard reports them (`WARN ...`) and explains how to wrap or reinstall them.
+**After an upgrade, what guard owns is refreshed for you.** `guard update self` starts the newly installed guard to run `guard hook refresh`, which rewrites the global hooks, guard hooks inside `.git` of recorded repositories and the marked directive block in your global agent docs. If guard was upgraded another way (for example `pipx upgrade`), the first guard command of the new version does the same once. Repository files (agent docs, hooks kept in the tree) are only reported, with the change to make.
+
+**Coming from `laya-ocr-guard` (0.10 or older).** 0.11 renamed the project to `banh-mi-guard` and its markers from `LAYA-OCR-GUARD` to `BANH-MI-GUARD`; old markers are not recognized. To move over:
+1. `pip uninstall laya-ocr-guard` (or `pipx uninstall laya-ocr-guard`), then install `banh-mi-guard` as shown in [Installation](#-cross-platform-installation-windows-linux-macos).
+2. Run `guard install` (or `guard install --workspace <dir>`): it rewrites the global hooks and adds the new directive block.
+3. Remove old `LAYA-OCR-GUARD` directive sections from agent docs and old guard hooks from `.git/hooks/pre-commit` of repositories where you installed them per repository.
+4. Delete `~/.guard/models` (the removed Laya model, about 555 MB).
 
 ---
 
 ## 🧪 Running the Test Suite
 
-The project includes a comprehensive end-to-end integration and unit test suite (130+ tests):
+The project includes a comprehensive end-to-end integration and unit test suite (140+ tests):
 ```bash
 pytest
 ```

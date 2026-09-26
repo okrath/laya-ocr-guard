@@ -18,10 +18,10 @@ guard pre "<prompt>" [options]
 
 ### Options:
 * `-r, --repo <path>`: Target repository directory (default: current directory).
-* `-q, --quick`: Quick triage mode (skips deep file scanning, runs fast reflex classification only).
+* `-q, --quick`: Accepted for compatibility; has no effect since the triage was removed in 0.11.
 * `-s, --scope <path|dir|glob>` (repeatable): Declare the files the task may change. Files named in the prompt are added automatically; globs are accepted only here. On Windows prefer a directory (`--scope src/ui`) over a quoted glob.
 * `--allow-dirty`: Start although files are already modified. They are snapshotted (`git stash create`, working tree untouched) and reported as pre-existing; post reviews only the edits made after pre.
-* `--force`: Restart an unfinished or rejected session. The restart keeps its baseline, snapshot, base commit and scope, is listed in the reports, and scope added by it fails as `SCOPE-004`.
+* `--force`: Restart an unfinished or rejected session. The restart keeps its baseline, snapshot, base commit, scope and locked invariants, is listed in the reports, and scope added by it fails as `SCOPE-004`.
 
 Pre refuses to start on a dirty tree (without `--allow-dirty`) and over an unfinished or rejected session (without `--force`).
 
@@ -41,7 +41,7 @@ guard post [options]
 * `--auto-fix`: Trigger self-healing remediation suggestions if verification fails.
 * `--hook`: Git-hook mode. Skips when the repository has no guard session; with an approved session, passes only when the changes match what was approved.
 
-Post audits against the base commit recorded at pre, runs the build command, invariant checks and the removed-symbol reference check, then asks the LLM. A new or edited `guard.invariants.json` is self-checked on the current tree, and rules the LLM discovers are written into it after validation.
+Post audits against the base commit recorded at pre, runs the build command, invariant checks and the removed-symbol reference check, then asks the LLM. A new or edited `guard.invariants.json` is self-checked on the current tree; a declared edit that removes or changes rules shows them as RETIRED / re-evaluated and reports `INV-WEAKENED` (MEDIUM), an undeclared one blocks (CRITICAL). Rules the LLM discovers are written, after validation, into the local `.guard/invariants.json` (never into the repository's file).
 
 ---
 
@@ -116,9 +116,7 @@ After `guard install`, every repository is set up automatically the first time g
 
 ```bash
 guard hook install          # same as `guard install` when used without options
-guard hook refresh          # refresh global hooks, repository guard blocks and marked directive blocks
-# Interactive setup (auto-detects single repo vs multi-repo workspace):
-guard hook install
+guard hook refresh          # refresh global hooks, guard hooks inside .git and marked blocks in global agent docs
 
 # Workspace / Multi-Repo Mode (auto-discovers child Git repositories):
 # Interactive menu: [A] All repos, [1-N] specific repos (e.g. 2,3,7,8), [G] Global, [N] None
@@ -128,10 +126,10 @@ guard hook install --select-repos "1,2"     # Selectively install to specific ch
 # Global Git Protection (Protects EVERY repository on your machine automatically):
 guard hook install --global                 # Sets git config --global core.hooksPath ~/.guard/hooks
 
-# Single Repo Shortcuts:
-guard hook install --stealth                # 👻 Stealth Mode (Git hook only, zero workspace files)
-guard hook install --mode agent             # 🤖 Agent Directives only (CLAUDE.md & AGENT.md)
-guard hook install --mode all               # 🛡️ Dual-Gate Full Protection (Git hooks + Agent directives)
+# Legacy per-repository modes:
+guard hook install --stealth                # 👻 Git hook in .git/hooks only (no repository file changes)
+guard hook install --mode agent             # 🤖 Agent directives appended to the repository's CLAUDE.md & AGENT.md (you asked for it: this is a repository change)
+guard hook install --mode all               # 🛡️ Both of the above
 
 # Check active status of hooks, child repositories, and global hooks:
 guard hook status
@@ -144,18 +142,16 @@ guard hook uninstall [--mode <git|agent|all>] [--global]
 * `-r, --repo <path>`: Target repository or workspace directory.
 * `-m, --mode <git|agent|all>`: Installation mode (`git`, `agent`, `all`).
 * `-s, --stealth`: Shortcut for `--mode git` (Git hooks only, no `CLAUDE.md`/`AGENT.md`).
-
-Every install mode creates the local `.guard/invariants.json` when the repository has no invariants (see `guard invariants init`) and never overwrites an existing file.
 * `-g, --global`: Configure Git hooks globally for all repositories via `git config --global core.hooksPath ~/.guard/hooks`.
 * `--all-repos`: Automatically install Git hooks into all discovered child Git repositories in workspace mode.
 * `--select-repos <indices|names>`: Comma-separated list of child repo numbers (e.g. `2,3,7,8`) or folder names.
 
-> 🔒 **Strict Safe-Append Policy:** Guard NEVER overwrites existing user `CLAUDE.md` or `AGENT.md` files. It creates a `.guard.bak` backup and cleanly appends Guard protocol markers.
+Every install mode creates the local `.guard/invariants.json` when the repository has no invariants (see `guard invariants init`) and never overwrites an existing file. Where guard appends directives it keeps the existing content, adds a marked block and makes a one-time `.guard.bak` backup.
 ---
 
 ## 8. `guard invariants`
 
-Create and validate the project's `guard.invariants.json` (kept in the root directory of each guarded repository).
+Create and validate project invariants: the local, Git-excluded `.guard/invariants.json` (guard's) and the optional `guard.invariants.json` in the repository root (yours, committed; a rule there wins over a local rule with the same id).
 
 ```bash
 # Create the local, Git-excluded .guard/invariants.json; imports numbered items under an "Invariants" (or Vietnamese "Bất biến") heading of AGENT.md / AGENTS.md / CLAUDE.md:
@@ -201,7 +197,7 @@ guard update self
 guard update self --check
 ```
 
-After a successful `guard update self`, the new version runs `guard hook refresh` automatically (global hooks, repository guard blocks and marked directive blocks). An upgrade done outside guard is refreshed by the first guard command of the new version.
+After a successful `guard update self`, the new version runs `guard hook refresh` automatically (global hooks, guard hooks inside `.git` of recorded repositories, marked blocks in global agent docs) and prints the setup check. An upgrade done outside guard is refreshed by the first guard command of the new version.
 
 ---
 

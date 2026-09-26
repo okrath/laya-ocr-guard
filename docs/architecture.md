@@ -8,7 +8,7 @@
 
 ## 1. System Taxonomy & Separation of Concerns
 
-The architecture strictly decouples reflexive, deterministic, and generative responsibilities:
+The architecture separates deterministic checks (no tokens) from the generative final review:
 
 | Component | Nature | Execution Latency | Token Cost | Core Responsibility |
 | :--- | :--- | :--- | :--- | :--- |
@@ -18,7 +18,7 @@ The architecture strictly decouples reflexive, deterministic, and generative res
 | **Simplicity Engine** | KISS/YAGNI & Dependency Bloat Scanner | <30ms (Diff) / <2s (Full) | **0 tokens ($0.00)** | Enforces the Ponytail Necessity Ladder: catches redundant packages (LAZY-001), premature abstractions (LAZY-002) and wheel reinventions (LAZY-003). Net LOC is reported, never scored. |
 | **Project Invariants** | Regex checks from `guard.invariants.json` | <100ms | **0 tokens ($0.00)** | Project rules evaluated on the current files at pre (baseline) and post. Rules without checks are `UNVERIFIED`; removing or relaxing a rule raises `INV-WEAKENED`. |
 | **Removal Reference Check** | Whole-repository search | <1s | **0 tokens ($0.00)** | Removed string keys, exports and CSS classes that are still referenced raise `DEAD-REF`; the summary is passed to the LLM as verified evidence. |
-| **Your Configured LLM** | Autoregressive Model (Claude, GPT, DeepSeek, Ollama) | Up to 180 s per diff part | User standard pricing | **Final Safety Gatekeeper**. Large diffs are reviewed in parts (one REVISE rejects the whole diff). It may propose new invariants, which guard writes only after they pass on the current code. If the LLM does not answer, the report says "Heuristic Gate" and records why. |
+| **Your Configured LLM** | Autoregressive Model (Claude, GPT, DeepSeek, Ollama) | Up to 180 s per diff part | User standard pricing | **Final Safety Gatekeeper**, consulted when no hard block applies. Large diffs are reviewed in parts (one REVISE rejects the whole diff); deleted files are sent as a one-line note. It may propose new invariants, which guard writes to the local `.guard/invariants.json` only after they pass on the current code. If the LLM does not answer, the report says "Heuristic Gate" and records why. |
 
 ---
 
@@ -51,7 +51,7 @@ The architecture strictly decouples reflexive, deterministic, and generative res
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ 3. FINAL SAFETY GATE: YOUR CONFIGURED LLM                   │
-│ (Claude-3.7-Sonnet / GPT-4o / DeepSeek / Ollama...)         │
+│ (Claude / GPT / DeepSeek / Ollama / OpenAI-compatible)      │
 │ • Reviews the report, verified evidence & batched diff      │
 │ • Technical Audit (Architecture, Memory Leaks, Scope)       │
 │ • Cross-Platform UX/UI & Ergonomics Assessment              │
@@ -64,10 +64,11 @@ The architecture strictly decouples reflexive, deterministic, and generative res
 ## 3. The Three Defense Layers
 
 ### Layer 1: Agent Directives (`CLAUDE.md` & `AGENT.md`)
-AI Coding Agents (`omp`, Claude Code, Cursor, Windsurf, Aider) automatically ingest `CLAUDE.md` and `AGENT.md` at the start of every session. The directives mandate executing `guard pre` prior to editing and `guard post` upon task completion. `guard install` writes the directives into each installed agent's global instruction file (Claude Code, Codex, Gemini CLI, opencode); `guard install --workspace <dir>` writes them into that folder's `CLAUDE.md`/`AGENT.md` for agents without a global file. The first guard run in a repository then sets it up without creating a repository diff (local, Git-excluded invariants file; a hook only inside `.git`).
+AI coding agents (Claude Code, Codex, Gemini CLI, opencode, Cursor, omp, Aider) read their instruction files at the start of a session. The directives mandate executing `guard pre` prior to editing and `guard post` upon task completion. `guard install` writes the directives into each installed agent's global instruction file (Claude Code, Codex, Gemini CLI, opencode); `guard install --workspace <dir>` writes them into that folder's `CLAUDE.md`/`AGENT.md` for agents without a global file. The first guard run in a repository then sets it up without creating a repository diff (local, Git-excluded invariants file; a hook only inside `.git`).
 
-### Layer 2: Git Hook Defense (`.git/hooks/pre-commit`)
-The Git `pre-commit` hook runs `guard post --hook` on every commit. Without a guard session it skips. With an unfinished or rejected session it runs the full verification pipeline and aborts the commit on failure. With an approved session it passes only when every changed file matches the approved content fingerprints, so later or unrelated edits cannot ride on an old approval. Repository-local hooks (including in linked worktrees) still run first.
+### Layer 2: Git Hook Defense (`pre-commit`)
+The Git `pre-commit` hook runs `guard post --hook` on every commit. Without a guard session it skips. With an unfinished or rejected session it runs the full verification pipeline and aborts the commit on failure. With an approved session it passes only when every changed file matches the approved content fingerprints, so later or unrelated edits cannot ride on an old approval. Repository-local hooks (including in linked worktrees) still run first. Guard never edits hooks kept in the repository tree (e.g. `.husky/`); `guard doctor` shows the line to add there.
+
 ### Layer 3: Process Harness Wrapper (`guard run`)
 For external CI/CD pipelines or headless scripts, `guard run "<prompt>" -- <command>` enforces the complete sandwich sequence as a single atomic process.
 
