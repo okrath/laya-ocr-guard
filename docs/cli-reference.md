@@ -206,6 +206,8 @@ After a successful `guard update self`, the new version runs `guard hook refresh
 
 Runs comprehensive system environment diagnostics and audits latest releases for both Laya-OCR-Guard CLI (GitHub) and Alibaba OCR (npm).
 
+It also prints the **Installation & Repository Setup** table for the current folder: Git hooks, agent directives (global and in this folder/repository, including sections without guard markers), the repository's own `core.hooksPath`, `guard.invariants.json` and Laya calibration. Every missing item comes with the command that fixes it (`guard install`, `guard hook refresh`, `guard invariants init`, `guard laya calibrate`). The same check runs after `guard update self` and once on the first command of a new version, showing only the problems.
+
 ```bash
 guard doctor [options]
 ```

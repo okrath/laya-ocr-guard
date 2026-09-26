@@ -162,13 +162,11 @@ def refresh_repo(repo: Path) -> List[str]:
     hooks = effective_hooks_dir(repo)
     global_dir = guard_home() / "hooks"
     if hooks and not _same(hooks, global_dir):
-        hook = hooks / "pre-commit"
-        if hook.exists():
-            text = hook.read_text(encoding="utf-8", errors="ignore")
-            if "LAYA-OCR-GUARD" in text:
-                msg = _ensure_hook_block(hook)
-                if msg:
-                    messages.append(msg)
+        # The repository runs its own hooks (the global hook never runs here): make sure they call
+        # guard, adding the block when missing (e.g. husky was set up after guard) or updating it
+        msg = _ensure_hook_block(hooks / "pre-commit")
+        if msg:
+            messages.append(msg)
     for name in AGENT_DOC_NAMES:
         msg = refresh_directive_block(repo / name)
         if msg:
@@ -344,6 +342,9 @@ def uninstall_global() -> List[str]:
         msg = remove_directive_block(doc)
         if msg:
             messages.append(msg)
+    if _registry_file().exists():
+        _registry_file().unlink()  # recorded repositories are no longer refreshed
+        messages.append("forgot the repositories guard had set up")
     return messages
 
 
@@ -382,4 +383,143 @@ def uninstall_workspace(folder: Path) -> List[str]:
     for repo in _workspace_repos(folder):
         _, msgs = HookInstaller(repo).uninstall(mode="git")
         messages.extend(f"{repo.name}: {m}" for m in msgs)
+        _forget_repo(repo)  # so a later refresh does not reinstall the hook
     return messages
+
+
+def _forget_repo(repo: Path) -> None:
+    registry = _read_json(_registry_file(), {})
+    if registry.pop(str(repo.resolve()), None) is not None:
+        _write_json(_registry_file(), registry)
+
+
+# ---------------------------------------------------------------------------
+# Setup health: what is missing and the command that fixes it
+# ---------------------------------------------------------------------------
+
+def _global_hooks_active() -> bool:
+    try:
+        res = subprocess.run(["git", "config", "--global", "--get", "core.hooksPath"], capture_output=True,
+                             text=True, encoding="utf-8", errors="replace", check=False)
+    except OSError:
+        return False
+    configured = res.stdout.strip()
+    return bool(configured) and _same(Path(os.path.expanduser(configured)), guard_home() / "hooks")
+
+
+def _hook_calls_guard(hook: Path) -> bool:
+    return hook.is_file() and "LAYA-OCR-GUARD" in hook.read_text(encoding="utf-8", errors="ignore")
+
+
+def _doc_state(doc: Path) -> str:
+    """'marked', 'unmarked' (guard text without markers) or 'none'."""
+    if not doc.is_file():
+        return "none"
+    text = doc.read_text(encoding="utf-8", errors="ignore")
+    if DIRECTIVE_START in text and DIRECTIVE_END in text:
+        return "marked"
+    return "unmarked" if "LAYA-OCR-GUARD" in text else "none"
+
+
+def _local_agent_docs(cwd: Path) -> List[Path]:
+    """Agent docs in cwd and its parents up to the repository root (or cwd alone outside Git)."""
+    stop = git_root(cwd)
+    docs, current = [], cwd.resolve()
+    while True:
+        docs.extend(current / n for n in AGENT_DOC_NAMES)
+        if stop is None or _same(current, stop) or current.parent == current:
+            break
+        current = current.parent
+    return docs
+
+
+def setup_health(cwd: Path) -> List[Dict[str, str]]:
+    """
+    Check an installation made by any guard version. Each entry: level ('missing' | 'warn' | 'ok'),
+    item, detail and the fix command, so users of older setups know exactly what to run.
+    """
+    out: List[Dict[str, str]] = []
+
+    def add(level: str, item: str, detail: str, fix: str = ""):
+        out.append({"level": level, "item": item, "detail": detail, "fix": fix})
+
+    repo = git_root(cwd)
+    install_fix = "guard install   (or: guard install --workspace <dir>)"
+
+    # 1. Git hooks
+    if _global_hooks_active():
+        if (guard_home() / "hooks" / "pre-commit").is_file():
+            add("ok", "Git hooks", "global hooks check every repository")
+        else:
+            add("missing", "Git hooks", "global core.hooksPath points at guard but the hook file is missing", "guard hook refresh")
+        if repo:
+            eff = effective_hooks_dir(repo)
+            if eff and not _same(eff, guard_home() / "hooks") and not _hook_calls_guard(eff / "pre-commit"):
+                add("missing", "Repository hook", f"{repo.name} sets its own core.hooksPath ({eff}) and its pre-commit does not call guard",
+                    "guard hook refresh   (run inside the repository)")
+    elif repo:
+        eff = effective_hooks_dir(repo)
+        if eff and _hook_calls_guard(eff / "pre-commit"):
+            add("ok", "Git hooks", f"repository hook in {eff}")
+        else:
+            add("missing", "Git hooks", f"commits in {repo.name} are not checked by guard", install_fix)
+    else:
+        add("missing", "Git hooks", "no global guard hooks are installed", install_fix)
+
+    # 2. Agent directives: an agent must be told to run guard, otherwise nothing starts
+    global_docs = global_agent_docs()
+    local_docs = _local_agent_docs(cwd)
+    states = {d: _doc_state(d) for d in global_docs + local_docs}
+    marked = [d for d, s in states.items() if s == "marked"]
+    for d, s in states.items():
+        if s == "unmarked":
+            add("warn", "Agent directives", f"{d} has guard directives without START/END markers, so upgrades cannot refresh them",
+                "wrap the guard section in guard's START/END markers (README: 'Refresh after an upgrade'), "
+                "or delete it and run guard install")
+    if marked:
+        add("ok", "Agent directives", ", ".join(str(d) for d in marked))
+    elif not any(s == "unmarked" for s in states.values()):
+        add("missing", "Agent directives", "no agent instruction file tells the agent to run guard pre/post", install_fix)
+
+    # 3. Project invariants
+    if repo:
+        from guard.core.project_invariants import INVARIANTS_FILENAME, InvariantsFileError, load_project_invariants
+        try:
+            items = load_project_invariants(repo)
+        except InvariantsFileError as e:
+            add("missing", "Invariants", str(e), "fix the file, then guard invariants check")
+        else:
+            if items is None:
+                add("warn", "Invariants", f"{repo.name} has no {INVARIANTS_FILENAME}", "guard invariants init")
+            elif not items:
+                add("warn", "Invariants", f"{INVARIANTS_FILENAME} is empty; generic domain templates are used",
+                    "add project rules, then guard invariants check")
+            else:
+                unchecked = sum(1 for i in items if not i.get("checks"))
+                if unchecked == len(items):
+                    add("warn", "Invariants", f"all {len(items)} invariants have no checks (UNVERIFIED)",
+                        "add {files, forbid|require} checks, then guard invariants check")
+                else:
+                    add("ok", "Invariants", f"{len(items) - unchecked}/{len(items)} invariants have automated checks")
+
+    # 4. Laya neural model
+    try:
+        from guard.core.laya_calibration import calibration_record, neural_is_calibrated
+        from guard.core.laya_onnx import DEFAULT_MODEL, get_model_path, is_model_installed
+        if is_model_installed(DEFAULT_MODEL):
+            model = get_model_path(DEFAULT_MODEL)
+            record = calibration_record(model)
+            if neural_is_calibrated(model):
+                add("ok", "Laya model", f"calibrated ({record['accuracy']:.0%}), neural triage in use")
+            elif record:
+                add("ok", "Laya model", f"failed calibration ({record['accuracy']:.0%}); the keyword reflex engine is used")
+            else:
+                add("warn", "Laya model", "installed but never calibrated: triage uses the keyword reflex engine",
+                    "guard laya calibrate   (optional)")
+    except Exception:
+        pass
+    return out
+
+
+def needs_refresh() -> bool:
+    return _read_json(_state_file(), {}).get("refreshed_version") != __version__

@@ -41,7 +41,9 @@ from guard.core.repo_setup import (
     git_root,
     install_global,
     install_workspace,
+    needs_refresh,
     refresh_after_upgrade,
+    setup_health,
     refresh_repo,
     uninstall_global,
     uninstall_workspace,
@@ -785,6 +787,24 @@ def config_sync_cmd(
         console.print(f"[yellow]⚠️ {msg}[/yellow]")
 
 
+def print_setup_health(cwd: Path, title: str, only_problems: bool = False) -> int:
+    """Print the setup check; returns the number of missing items."""
+    rows = setup_health(cwd)
+    problems = [r for r in rows if r["level"] != "ok"]
+    if only_problems and not problems:
+        return 0
+    table = Table(title=title, show_header=True, header_style="bold magenta")
+    table.add_column("Item", style="bold")
+    table.add_column("Status", justify="center")
+    table.add_column("Detail")
+    table.add_column("How to fix", style="cyan")
+    badge = {"ok": "[green]✅ OK[/green]", "warn": "[yellow]⚠️ WARN[/yellow]", "missing": "[bold red]❌ MISSING[/bold red]"}
+    for r in (problems if only_problems else rows):
+        table.add_row(r["item"], badge[r["level"]], r["detail"], r["fix"])
+    console.print(table)
+    return sum(1 for r in rows if r["level"] == "missing")
+
+
 def _print_install(result) -> None:
     ok, messages = result
     for msg in messages:
@@ -849,6 +869,7 @@ def hook_refresh_cmd(
     for msg in messages or ["everything is already up to date"]:
         style = "yellow" if msg.startswith("WARN") else "green"
         console.print(f"[{style}]• {msg}[/{style}]")
+    print_setup_health(target, "🧩 guard setup check", only_problems=True)
 
 
 def refresh_repo_if_git(path: Path) -> List[str]:
@@ -1291,6 +1312,12 @@ def doctor_cmd(
         table.add_row("Laya Neural Engine", "⚡ Ready", f"Assets OK. Run 'guard laya download' to cache {cfg.laya.model_name}")
     console.print(table)
 
+    # Installation & repository setup: what is missing after installing/upgrading, and how to fix it
+    console.print()
+    missing = print_setup_health(Path.cwd(), "🧩 Installation & Repository Setup")
+    if missing:
+        console.print(f"[bold red]{missing} item(s) missing.[/bold red] Run the command in 'How to fix'.")
+
     # 2. Supply-Chain Security & Update Quarantine Table (Focused on Alibaba OCR)
     if check_updates:
         console.print(f"\n[bold yellow]🛡️  RELEASES & SUPPLY-CHAIN AUDIT (Alibaba OCR Quarantine: {quarantine_days:.0f} days)[/bold yellow]")
@@ -1530,8 +1557,11 @@ def main():
     # After an upgrade, refresh the hooks and directive blocks guard wrote earlier (once per version).
     # `guard hook refresh` does the same work itself, so it is not run twice.
     try:
-        for msg in ([] if sys.argv[1:3] == ["hook", "refresh"] else refresh_after_upgrade()):
-            console.print(f"[cyan]🔄 guard {__version__}: {msg}[/cyan]")
+        if sys.argv[1:3] != ["hook", "refresh"] and needs_refresh():
+            for msg in refresh_after_upgrade():
+                console.print(f"[cyan]🔄 guard {__version__}: {msg}[/cyan]")
+            # Once per version: tell users of older setups what is still missing and how to fix it
+            print_setup_health(Path.cwd(), f"🧩 guard {__version__} setup check", only_problems=True)
     except Exception as e:  # never block the actual command
         console.print(f"[yellow]guard refresh skipped: {e}[/yellow]")
     maybe_trigger_background_update_check()

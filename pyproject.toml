@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "laya-ocr-guard"
-version = "0.8.0"
+version = "0.9.0"
 description = "Dual-gate impact analysis & regression guard combining Laya, Alibaba Open Code Review (OCR), and LLM reasoning"
 readme = "README.md"
 requires-python = ">=3.10"

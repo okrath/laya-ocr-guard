@@ -39,7 +39,8 @@ LABELLED_PROMPTS: List[Tuple[str, str]] = [
 
 
 def calibration_file() -> Path:
-    return Path.home() / ".guard" / "laya_calibration.json"
+    from guard.core.repo_setup import guard_home
+    return guard_home() / "laya_calibration.json"
 
 
 def _model_fingerprint(model_path: Path) -> Dict[str, object]:
@@ -47,16 +48,22 @@ def _model_fingerprint(model_path: Path) -> Dict[str, object]:
     return {"model_file": str(model_path), "size": st.st_size, "mtime": int(st.st_mtime)}
 
 
-def neural_is_calibrated(model_path: Optional[Path]) -> bool:
-    """True only when this exact model file passed calibration."""
+def calibration_record(model_path: Optional[Path]) -> Optional[Dict[str, object]]:
+    """The calibration record of this exact model file, passed or not."""
     if model_path is None or not model_path.is_file():
-        return False
+        return None
     try:
         record = json.loads(calibration_file().read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return False
+        return None
     fp = _model_fingerprint(model_path)
-    return bool(record.get("passed")) and all(record.get(k) == v for k, v in fp.items())
+    return record if all(record.get(k) == v for k, v in fp.items()) else None
+
+
+def neural_is_calibrated(model_path: Optional[Path]) -> bool:
+    """True only when this exact model file passed calibration."""
+    record = calibration_record(model_path)
+    return bool(record and record.get("passed"))
 
 
 def calibrate(model_path: Path, classify: Callable[[str], str]) -> Dict[str, object]:

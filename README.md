@@ -340,6 +340,29 @@ guard update self --check
 guard doctor
 ```
 
+#### Upgrading from an older version
+Old installations (per-repository hooks, directives pasted without markers, no invariants file) keep working, and guard tells you what is still missing:
+
+- `guard update self` runs `guard hook refresh` with the new version and then prints a **setup check** listing each missing item and the command that fixes it.
+- If guard was upgraded another way, the first guard command of the new version prints the same check once.
+- `guard doctor` always shows it, in the "Installation & Repository Setup" table.
+
+| Check says | Run |
+|---|---|
+| Git hooks missing / commits not checked | `guard install` (or `guard install --workspace <dir>`) |
+| Agent directives missing (no agent is told to run guard) | `guard install` (or `guard install --workspace <dir>`) |
+| Repository sets its own `core.hooksPath` and its hook does not call guard | `guard hook refresh` inside the repository |
+| Guard directives without START/END markers | wrap the guard section as shown below, or delete it and run `guard install` |
+| No `guard.invariants.json` / invariants without checks | `guard invariants init`, then add checks and run `guard invariants check` |
+| Laya model never calibrated (optional) | `guard laya calibrate` |
+
+Markers that let guard refresh a pasted directive section:
+```markdown
+<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: START === -->
+...guard directives...
+<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: END === -->
+```
+
 **After an upgrade nothing has to be done by hand.** `guard update self` starts the newly installed guard to run `guard hook refresh`, which rewrites the global hooks, the guard blocks in recorded repositories' hooks and every directive block between guard markers. If guard was upgraded another way (for example `pipx upgrade`), the first guard command of the new version does the same once. A repository installed by an older version is refreshed the first time guard runs in it. The only manual case is guard directives pasted into an agent doc without the START/END markers: guard reports them (`WARN ...`) and explains how to wrap or reinstall them.
 
 ### 7. Laya Neural Engine (`guard laya`)

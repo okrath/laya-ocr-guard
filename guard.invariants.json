@@ -192,6 +192,41 @@
       "rationale": "Discovered by the LLM gate review",
       "checks": [],
       "origin": "llm:guard-1790390089"
+    },
+    {
+      "id": "HEALTH-01",
+      "description": "Users of older installations are told what is missing and how to fix it: guard doctor, `guard hook refresh` (run by update self) and the first command of a new version print the setup check with a fix command.",
+      "rationale": "Upgrading only refreshes what guard wrote before; gaps such as missing directives or unmarked sections need a visible instruction.",
+      "checks": [
+        { "files": "guard/core/repo_setup.py", "require": "def setup_health\\(" },
+        { "files": "guard/cli.py", "require": "print_setup_health\\(Path\\.cwd\\(\\), \"🧩 Installation & Repository Setup\"\\)" },
+        { "files": "guard/cli.py", "require": "print_setup_health\\(target, \"🧩 guard setup check\", only_problems=True\\)" }
+      ]
+    },
+    {
+      "id": "CALIBRATION-PATH",
+      "description": "The Laya calibration record is addressed only through `guard_home()`, never through a hardcoded home-directory path",
+      "rationale": "Discovered by the LLM gate review",
+      "checks": [
+        { "files": "guard/core/*.py", "forbid": "Path\\.home\\(\\).*laya_calibration" }
+      ],
+      "origin": "llm:guard-1790391467"
+    },
+    {
+      "id": "UNINSTALL-FORGETS-REGISTRY",
+      "description": "Uninstall paths clear guard's recorded-repository registry so a later upgrade refresh cannot reinstall hooks into forgotten repositories",
+      "rationale": "Discovered by the LLM gate review",
+      "checks": [
+        { "files": "guard/core/repo_setup.py", "require": "_forget_repo|_registry_file\\(\\)\\.unlink" }
+      ],
+      "origin": "llm:guard-1790391467"
+    },
+    {
+      "id": "SETUP-HEALTH-FIX-COMMAND",
+      "description": "Every row reported by `setup_health()` at level missing or warn carries the exact command that fixes it",
+      "rationale": "Discovered by the LLM gate review",
+      "checks": [],
+      "origin": "llm:guard-1790391467"
     }
   ]
 }
