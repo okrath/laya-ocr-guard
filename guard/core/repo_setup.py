@@ -18,7 +18,7 @@ import re
 import stat
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from guard import __version__
 
@@ -254,4 +254,132 @@ def refresh_after_upgrade(force: bool = False) -> List[str]:
 
     state["refreshed_version"] = __version__
     _write_json(_state_file(), state)
+    return messages
+
+
+# ---------------------------------------------------------------------------
+# Install modes: global (whole machine) or workspace (one folder)
+# ---------------------------------------------------------------------------
+
+def _directive_block() -> str:
+    from guard.hooks.templates import AGENT_DIRECTIVES_TEMPLATE
+    return f"{DIRECTIVE_START}\n{AGENT_DIRECTIVES_TEMPLATE.strip()}\n{DIRECTIVE_END}"
+
+
+def add_directive_block(doc: Path) -> str:
+    """Append the marked guard block (or refresh it). Backs up the original file once."""
+    if doc.is_file():
+        text = doc.read_text(encoding="utf-8", errors="ignore")
+        if DIRECTIVE_START in text and DIRECTIVE_END in text:
+            return refresh_directive_block(doc) or f"guard directives already current in {doc}"
+        if "LAYA-OCR-GUARD" in text:
+            return refresh_directive_block(doc) or f"WARN {doc}: unmarked guard directives"
+        backup = doc.with_name(f"{doc.name}.guard.bak")
+        if not backup.exists():
+            backup.write_text(text, encoding="utf-8", newline="\n")
+        new = text.rstrip() + "\n\n" + _directive_block() + "\n"
+    else:
+        doc.parent.mkdir(parents=True, exist_ok=True)
+        new = _directive_block() + "\n"
+    doc.write_text(new, encoding="utf-8", newline="\n")
+    return f"added guard directives to {doc}"
+
+
+def remove_directive_block(doc: Path) -> Optional[str]:
+    """Remove the marked guard block; delete the file when nothing else is left in it."""
+    if not doc.is_file():
+        return None
+    text = doc.read_text(encoding="utf-8", errors="ignore")
+    if DIRECTIVE_START not in text or DIRECTIVE_END not in text:
+        return None
+    new = re.sub(r"\n*" + re.escape(DIRECTIVE_START) + r".*?" + re.escape(DIRECTIVE_END) + r"\n?",
+                 "\n", text, count=1, flags=re.DOTALL).strip()
+    if new:
+        doc.write_text(new + "\n", encoding="utf-8", newline="\n")
+        return f"removed guard directives from {doc}"
+    doc.unlink()
+    return f"deleted {doc} (it only contained guard directives)"
+
+
+def global_agent_docs() -> List[Path]:
+    """Global instruction files of the agents whose config directory exists on this machine."""
+    docs = []
+    for rel in GLOBAL_AGENT_DOCS:
+        doc = Path.home() / rel
+        if doc.parent.is_dir():
+            docs.append(doc)
+    return docs
+
+
+def install_global(cwd: Path) -> Tuple[bool, List[str]]:
+    from guard.hooks.installer import HookInstaller
+
+    ok, messages = HookInstaller.install_global_git_hooks()
+    docs = global_agent_docs()
+    for doc in docs:
+        messages.append(add_directive_block(doc))
+    if not docs:
+        messages.append("WARN no agent config directory found (~/.claude, ~/.codex, ~/.gemini, ~/.config/opencode); "
+                        "use `guard install --workspace <dir>` so agents see the guard directives")
+    messages.extend(ensure_repo_setup(cwd))
+    return ok, messages
+
+
+def uninstall_global() -> List[str]:
+    from guard.hooks.installer import HookInstaller
+
+    messages: List[str] = []
+    configured = None
+    try:
+        res = subprocess.run(["git", "config", "--global", "--get", "core.hooksPath"], capture_output=True,
+                             text=True, encoding="utf-8", errors="replace", check=False)
+        configured = res.stdout.strip() or None
+    except OSError:
+        pass
+    if configured and _same(Path(os.path.expanduser(configured)), guard_home() / "hooks"):
+        messages.extend(HookInstaller.uninstall_global_git_hooks()[1])
+    elif configured:
+        messages.append(f"kept global core.hooksPath {configured} (not guard's)")
+    for doc in global_agent_docs():
+        msg = remove_directive_block(doc)
+        if msg:
+            messages.append(msg)
+    return messages
+
+
+def _workspace_repos(folder: Path) -> List[Path]:
+    from guard.hooks.installer import HookInstaller
+
+    root = git_root(folder)
+    if root is not None and _same(root, folder):
+        return [folder]
+    return HookInstaller(folder).find_child_git_repos()
+
+
+def install_workspace(folder: Path) -> Tuple[bool, List[str]]:
+    """Guard only inside `folder`: directives in its agent docs, hooks in every Git repo below it."""
+    from guard.hooks.installer import HookInstaller
+
+    folder = folder.resolve()
+    messages = [add_directive_block(folder / name) for name in ("CLAUDE.md", "AGENT.md")]
+    if (folder / "AGENTS.md").is_file():
+        messages.append(add_directive_block(folder / "AGENTS.md"))
+    repos = _workspace_repos(folder)
+    for repo in repos:
+        ok, msgs = HookInstaller(repo).install(mode="git")
+        messages.extend(f"{repo.name}: {m}" for m in msgs)
+        messages.extend(f"{repo.name}: {m}" for m in ensure_repo_setup(repo))
+    if not repos:
+        messages.append("no Git repository in this workspace: only the agent directives apply")
+    return True, messages
+
+
+def uninstall_workspace(folder: Path) -> List[str]:
+    from guard.hooks.installer import HookInstaller
+
+    folder = folder.resolve()
+    messages = [m for m in (remove_directive_block(folder / n) for n in ("CLAUDE.md", "AGENT.md", "AGENTS.md")) if m]
+    for repo in _workspace_repos(folder):
+        _, msgs = HookInstaller(repo).uninstall(mode="git")
+        messages.extend(f"{repo.name}: {m}" for m in msgs)
     return messages

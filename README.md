@@ -202,37 +202,32 @@ AI coding agents tend to be hyperactive—installing heavy libraries for trivial
 
 ## 📖 CLI Usage Workflows
 
-### 1. Bind Hooks to Any Target Repository or Workspace (`guard hook`)
-Navigate to any target project repository, multi-repo workspace, or install globally across your machine:
+### 1. Install (`guard install`)
+There are two ways to install guard. Neither needs a per-repository step.
 
 ```bash
-# Default: global Git hooks for every repository on this machine (core.hooksPath ~/.guard/hooks).
-# Each repository is then set up automatically the first time guard runs in it (see below).
-guard hook install
+# Global (whole machine):
+#  - Git hooks for every repository (git config --global core.hooksPath ~/.guard/hooks)
+#  - the guard directives in the global instruction file of each agent found on this machine:
+#    ~/.claude/CLAUDE.md (Claude Code), ~/.codex/AGENTS.md (Codex), ~/.gemini/GEMINI.md (Gemini CLI),
+#    ~/.config/opencode/AGENTS.md (opencode). Existing content is kept (backup: *.guard.bak).
+guard install
 
-# Rewrite what guard installed earlier to the current version (global hooks, guard blocks in
-# repository hooks, directive blocks in agent docs). Runs automatically once after each upgrade.
+# Workspace (one folder only):
+#  - the guard directives in CLAUDE.md and AGENT.md of that folder
+#  - Git hooks in the folder's repository, or in every Git repository below it
+guard install --workspace path/to/workspace
+
+# Remove what install added (marked blocks and guard's hooks; a foreign core.hooksPath is kept):
+guard uninstall [--workspace path/to/workspace]
+
+# Rewrite what guard installed earlier to the current version. Runs automatically after upgrades.
 guard hook refresh
-
-# Workspace / Multi-Repo Mode (auto-discovers child Git repositories):
-# Prompts to select: [A] All repos, [1-N] specific repos (e.g. 2,3,7,8), [G] Global, or [N] None
-guard hook install --all-repos              # Install Git hooks to all discovered child repos
-guard hook install --select-repos "1,2"     # Selectively install to specific child repos
-
-# Global Git Protection (Protects EVERY repository on your machine automatically):
-guard hook install --global                 # Sets git config --global core.hooksPath ~/.guard/hooks
-
-# Per-repository modes (no global hooks):
-guard hook install --stealth                # 👻 Stealth Mode (Git hook only, zero workspace files, never pushed to remote)
-guard hook install --mode agent             # 🤖 Workspace Agent Directives (CLAUDE.md & AGENT.md)
-guard hook install --mode all               # 🛡️ Dual-Gate Full Protection (Git hooks + Agent Directives)
-
-# Inspect hook and agent directive status (including child repos and global hooks):
-guard hook status
-
-# Safely uninstall hooks and restore previous user files:
-guard hook uninstall [--mode <git|agent|all>] [--global]
 ```
+
+**How it chains together.** The agent reads the guard directives (global or workspace) and runs `guard pre` before editing. The first guard run inside a repository sets it up (below), and the Git hook checks every commit. Agents without a global instruction file (Cursor, omp) see the directives through a workspace install.
+
+The older `guard hook install` still works: without options it runs `guard install`, and its options (`--stealth`, `--mode`, `--all-repos`, `--select-repos`, `--global`) keep their previous per-repository behavior. `guard hook status` shows the current hooks and directives.
 
 > 🔒 **Strict Safe-Append Policy:** Guard NEVER overwrites existing user `CLAUDE.md` or `AGENT.md` directives. It creates a `.guard.bak` backup and cleanly appends Guard protocol markers. Uninstallation cleanly restores user files.
 

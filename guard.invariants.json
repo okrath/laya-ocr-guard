@@ -175,6 +175,23 @@
       "rationale": "Discovered by the LLM gate review",
       "checks": [],
       "origin": "llm:guard-1790389155"
+    },
+    {
+      "id": "INSTALL-01",
+      "description": "Global install writes only into agents installed on this machine and uninstall removes only the marked guard block, keeping the user's content and a foreign core.hooksPath.",
+      "rationale": "guard install edits the user's global agent instruction files such as ~/.claude/CLAUDE.md.",
+      "checks": [
+        { "files": "guard/core/repo_setup.py", "require": "if doc.parent.is_dir\\(\\):" },
+        { "files": "guard/core/repo_setup.py", "require": "kept global core.hooksPath" },
+        { "files": "guard/core/repo_setup.py", "require": "def remove_directive_block\\(" }
+      ]
+    },
+    {
+      "id": "INSTALL-ONLY-PRESENT-AGENTS",
+      "description": "Global install and uninstall touch only the global instruction files of agents whose config directory exists on this machine",
+      "rationale": "Discovered by the LLM gate review",
+      "checks": [],
+      "origin": "llm:guard-1790390089"
     }
   ]
 }

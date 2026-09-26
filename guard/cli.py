@@ -36,7 +36,16 @@ from guard.core.hygiene_engine import HygieneEngine
 from guard.core.llm_reviewer import LLMReviewerEngine, ReviewVerdict
 from guard.core.ocr_engine import GitDiffInspector, OCRRulebookRunner, RuleViolation
 from guard.core.removal_check import check_removed_symbols
-from guard.core.repo_setup import ensure_repo_setup, git_root, refresh_after_upgrade, refresh_repo
+from guard.core.repo_setup import (
+    ensure_repo_setup,
+    git_root,
+    install_global,
+    install_workspace,
+    refresh_after_upgrade,
+    refresh_repo,
+    uninstall_global,
+    uninstall_workspace,
+)
 from guard.core.project_invariants import (
     INVARIANTS_FILENAME,
     InvariantsFileError,
@@ -776,6 +785,48 @@ def config_sync_cmd(
         console.print(f"[yellow]⚠️ {msg}[/yellow]")
 
 
+def _print_install(result) -> None:
+    ok, messages = result
+    for msg in messages:
+        style = "yellow" if msg.startswith("WARN") else "green"
+        console.print(f"[{style}]• {msg}[/{style}]")
+    if not ok:
+        raise typer.Exit(code=1)
+
+
+@app.command("install")
+def install_cmd(
+    workspace: Optional[str] = typer.Option(
+        None, "--workspace", "-w",
+        help="Guard only this folder: agent docs in it, Git hooks in every repository below it",
+    ),
+):
+    """
+    Install guard. Default (global): Git hooks for every repository on this machine plus the guard
+    directives in the global instruction files of the agents found here (Claude Code, Codex,
+    Gemini CLI, opencode). Repositories are then set up automatically the first time guard runs.
+    """
+    if workspace:
+        _print_install(install_workspace(Path(workspace)))
+        console.print("[bold green]✅ Guard active in this workspace only.[/bold green]")
+        return
+    _print_install(install_global(Path.cwd()))
+    console.print("[bold green]✅ Guard active on this machine. Agents read the directives; repositories set themselves up on first use.[/bold green]")
+
+
+@app.command("uninstall")
+def uninstall_cmd(
+    workspace: Optional[str] = typer.Option(None, "--workspace", "-w", help="Remove guard from this workspace only"),
+):
+    """
+    Remove what `guard install` added: the marked directive blocks and guard's Git hooks
+    (global core.hooksPath is unset only when it points at guard's hooks).
+    """
+    messages = uninstall_workspace(Path(workspace)) if workspace else uninstall_global()
+    for msg in messages or ["nothing to remove"]:
+        console.print(f"[yellow]• {msg}[/yellow]")
+
+
 # Subcommand: guard hook
 hook_app = typer.Typer(
     name="hook",
@@ -815,12 +866,14 @@ def hook_install_cmd(
     select_repos: Optional[str] = typer.Option(None, "--select-repos", help="Comma-separated indices (1,2) or names of child repositories"),
 ):
     """
-    Install Guard hooks. Without options this installs the global hooks (every repository on
-    the machine); each repository is then set up lazily the first time guard runs in it.
-    Options keep the per-repository / workspace modes.
+    Legacy entry point, kept for existing scripts: prefer `guard install` (global) or
+    `guard install --workspace <dir>`. Without options this is the same as `guard install`.
     """
-    if not any([repo, mode, stealth, all_repos, select_repos]):
-        global_hooks = True  # default: one global install instead of one per folder
+    if not any([repo, mode, stealth, all_repos, select_repos, global_hooks]):
+        console.print("[dim]`guard hook install` is now `guard install`; running the global install.[/dim]")
+        _print_install(install_global(Path.cwd()))
+        return
+    console.print("[dim]Note: prefer `guard install` (global) or `guard install --workspace <dir>`.[/dim]")
 
     if global_hooks:
         console.print("[cyan]Configuring Global Git Hooks (~/.guard/hooks)...[/cyan]")

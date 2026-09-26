@@ -96,14 +96,26 @@ guard config sync
 
 ---
 
-## 6. `guard hook`
-
-Manages Git hooks, AI Agent directives, and multi-repo workspace protection.
-
-Without options, `guard hook install` installs the **global** hooks (`core.hooksPath ~/.guard/hooks`) and sets up the current repository. Every other repository is set up automatically the first time guard runs in it: `guard.invariants.json` is created when missing, and when the repository uses its own `core.hooksPath` (the global hook does not run there) a marked guard block is inserted after the shebang of its `pre-commit`. `guard hook refresh` rewrites what guard installed earlier to the current version; the same refresh runs once automatically after each upgrade.
+## 6. `guard install` / `guard uninstall`
 
 ```bash
-guard hook install          # global hooks + set up this repository
+guard install                          # global: hooks for every repo + directives in installed agents' global files
+guard install --workspace <dir>        # workspace: directives in <dir>/CLAUDE.md and AGENT.md + hooks in its repos
+guard uninstall [--workspace <dir>]    # remove the marked directive blocks and guard's hooks
+```
+
+Global writes the marked guard block into `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md` and `~/.config/opencode/AGENTS.md`, only for agents whose config directory exists; existing content is kept and backed up once (`*.guard.bak`). Uninstall removes only the marked block (deleting a file that held nothing else) and unsets `core.hooksPath` only when it points at guard's hooks.
+
+---
+
+## 7. `guard hook`
+
+Manages Git hooks, AI Agent directives, and multi-repo workspace protection. `guard hook install` without options runs `guard install`; its options keep the previous per-repository behavior.
+
+After `guard install`, every repository is set up automatically the first time guard runs in it: `guard.invariants.json` is created when missing, and when the repository uses its own `core.hooksPath` (the global hook does not run there) a marked guard block is inserted after the shebang of its `pre-commit`. `guard hook refresh` rewrites what guard installed earlier to the current version; the same refresh runs once automatically after each upgrade.
+
+```bash
+guard hook install          # same as `guard install` when used without options
 guard hook refresh          # refresh global hooks, repository guard blocks and marked directive blocks
 # Interactive setup (auto-detects single repo vs multi-repo workspace):
 guard hook install
@@ -141,7 +153,7 @@ Every install mode creates `guard.invariants.json` when it is missing (see `guar
 > 🔒 **Strict Safe-Append Policy:** Guard NEVER overwrites existing user `CLAUDE.md` or `AGENT.md` files. It creates a `.guard.bak` backup and cleanly appends Guard protocol markers.
 ---
 
-## 7. `guard invariants`
+## 8. `guard invariants`
 
 Create and validate the project's `guard.invariants.json` (kept in the root directory of each guarded repository).
 
@@ -155,7 +167,7 @@ guard invariants check
 
 ---
 
-## 8. `guard reset`
+## 9. `guard reset`
 
 Close the current guard session, for example after its work was committed or abandoned. The session is archived to `.guard/history/<session_id>.json`.
 
@@ -165,7 +177,7 @@ guard reset
 
 ---
 
-## 9. `guard update`
+## 10. `guard update`
 
 Safely updates Alibaba OCR respecting the 3-day supply-chain quarantine cooling period.
 
@@ -190,7 +202,7 @@ After a successful `guard update self`, the new version runs `guard hook refresh
 
 ---
 
-## 10. `guard doctor`
+## 11. `guard doctor`
 
 Runs comprehensive system environment diagnostics and audits latest releases for both Laya-OCR-Guard CLI (GitHub) and Alibaba OCR (npm).
 
@@ -204,7 +216,7 @@ guard doctor [options]
 
 ---
 
-## 11. `guard laya`
+## 12. `guard laya`
 
 Manages the embedded Laya ONNX Native Neural Decision Engine.
 

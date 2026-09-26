@@ -65,7 +65,7 @@ The architecture strictly decouples reflexive, deterministic, and generative res
 ## 3. The Three Defense Layers
 
 ### Layer 1: Agent Directives (`CLAUDE.md` & `AGENT.md`)
-AI Coding Agents (`omp`, Claude Code, Cursor, Windsurf, Aider) automatically ingest `CLAUDE.md` and `AGENT.md` at the start of every session. The directives mandate executing `guard pre` prior to editing and `guard post` upon task completion.
+AI Coding Agents (`omp`, Claude Code, Cursor, Windsurf, Aider) automatically ingest `CLAUDE.md` and `AGENT.md` at the start of every session. The directives mandate executing `guard pre` prior to editing and `guard post` upon task completion. `guard install` writes the directives into each installed agent's global instruction file (Claude Code, Codex, Gemini CLI, opencode); `guard install --workspace <dir>` writes them into that folder's `CLAUDE.md`/`AGENT.md` for agents without a global file. The first guard run in a repository then sets the repository up (invariants file, hook block when it overrides `core.hooksPath`).
 
 ### Layer 2: Git Hook Defense (`.git/hooks/pre-commit`)
 The Git `pre-commit` hook runs `guard post --hook` on every commit. Without a guard session it skips. With an unfinished or rejected session it runs the full verification pipeline and aborts the commit on failure. With an approved session it passes only when every changed file matches the approved content fingerprints, so later or unrelated edits cannot ride on an old approval. Repository-local hooks (including in linked worktrees) still run first.
