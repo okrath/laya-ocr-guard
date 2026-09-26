@@ -345,6 +345,8 @@ guard update self --check
 guard doctor
 ```
 
+**After an upgrade nothing has to be done by hand.** `guard update self` starts the newly installed guard to run `guard hook refresh`, which rewrites the global hooks, the guard blocks in recorded repositories' hooks and every directive block between guard markers. If guard was upgraded another way (for example `pipx upgrade`), the first guard command of the new version does the same once. A repository installed by an older version is refreshed the first time guard runs in it. The only manual case is guard directives pasted into an agent doc without the START/END markers: guard reports them (`WARN ...`) and explains how to wrap or reinstall them.
+
 ### 7. Laya Neural Engine (`guard laya`)
 Manage the embedded non-autoregressive neural classification model:
 ```bash

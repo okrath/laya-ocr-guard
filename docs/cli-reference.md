@@ -186,6 +186,8 @@ guard update self
 guard update self --check
 ```
 
+After a successful `guard update self`, the new version runs `guard hook refresh` automatically (global hooks, repository guard blocks and marked directive blocks). An upgrade done outside guard is refreshed by the first guard command of the new version.
+
 ---
 
 ## 10. `guard doctor`

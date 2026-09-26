@@ -141,7 +141,11 @@ def refresh_directive_block(doc: Path) -> Optional[str]:
     text = doc.read_text(encoding="utf-8", errors="ignore")
     if DIRECTIVE_START not in text or DIRECTIVE_END not in text:
         if "LAYA-OCR-GUARD" in text:
-            return f"WARN {doc}: guard directives without START/END markers were not refreshed; update them by hand"
+            return (
+                f"WARN {doc}: guard directives without START/END markers were not refreshed. Wrap the guard "
+                f"section in `{DIRECTIVE_START}` ... `{DIRECTIVE_END}` (guard then keeps it current), or delete "
+                f"it and run `guard hook install --mode agent`."
+            )
         return None
     block = f"{DIRECTIVE_START}\n{AGENT_DIRECTIVES_TEMPLATE.strip()}\n{DIRECTIVE_END}"
     new = re.sub(re.escape(DIRECTIVE_START) + r".*?" + re.escape(DIRECTIVE_END),
@@ -196,6 +200,9 @@ def ensure_repo_setup(start: Path, create_invariants: bool = True) -> List[str]:
             msg = _ensure_hook_block(hooks / "pre-commit")
             if msg:
                 messages.append(msg)
+        # A repository set up by an older guard (before repositories were recorded) may carry
+        # outdated guard blocks: refresh them on this first visit too.
+        messages.extend(refresh_repo(repo))
     elif known.get("version") != __version__:
         messages.extend(refresh_repo(repo))
 

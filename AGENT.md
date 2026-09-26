@@ -1,3 +1,4 @@
+<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: START === -->
 # 🛡️ MANDATORY PROTOCOL: LAYA-OCR-GUARD DUAL-GATE HOOK
 
 This document establishes **Mandatory Operational Directives** for any AI Coding Agent (`omp`, Claude Code, Cursor, Windsurf, Aider) working in this repository.
@@ -65,3 +66,4 @@ When replying to the user, the Agent must strictly structure the response:
 * **Build Check:** [Automated compilation & test results from guard post]
 * **LLM Gate Verdict:** [APPROVED or REVISE]
 ```
+<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: END === -->

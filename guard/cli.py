@@ -1138,6 +1138,7 @@ def update_cmd(
         success, msg = perform_self_upgrade()
         if success:
             console.print(f"[bold green]{msg}[/bold green]")
+            _refresh_with_new_version()
         else:
             console.print(f"[bold red]{msg}[/bold red]")
             raise typer.Exit(code=1)
@@ -1443,6 +1444,24 @@ def laya_triage_cmd(
 
     console.print(table)
 
+def _refresh_with_new_version() -> None:
+    """
+    This process still runs the old code, so start the freshly installed guard to refresh
+    hooks and directive blocks now, instead of waiting for the next guard command.
+    """
+    console.print("[cyan]Refreshing installed hooks and agent directives with the new version...[/cyan]")
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", "from guard.cli import main; main()", "hook", "refresh"],
+            check=False, timeout=120,
+        )
+        if proc.returncode == 0:
+            return
+    except Exception:
+        pass
+    console.print("[yellow]Automatic refresh did not complete. Run `guard hook refresh` to update hooks and directives.[/yellow]")
+
+
 def _force_utf8_console():
     """Git hooks and legacy Windows consoles default to cp1252; emoji output would crash the run."""
     for stream in (sys.stdout, sys.stderr):
@@ -1455,9 +1474,10 @@ def _force_utf8_console():
 
 def main():
     _force_utf8_console()
-    # After an upgrade, refresh the hooks and directive blocks guard wrote earlier (once per version)
+    # After an upgrade, refresh the hooks and directive blocks guard wrote earlier (once per version).
+    # `guard hook refresh` does the same work itself, so it is not run twice.
     try:
-        for msg in refresh_after_upgrade():
+        for msg in ([] if sys.argv[1:3] == ["hook", "refresh"] else refresh_after_upgrade()):
             console.print(f"[cyan]🔄 guard {__version__}: {msg}[/cyan]")
     except Exception as e:  # never block the actual command
         console.print(f"[yellow]guard refresh skipped: {e}[/yellow]")

@@ -111,3 +111,40 @@ def test_pre_ignores_the_invariants_file_setup_just_created(tmp_path):
     repo = make_repo(tmp_path, str(guard_home() / "hooks"))
     assert execute_pre_task("Fix src/chat.ts", repo_path=repo) is True
     assert (repo / "guard.invariants.json").is_file()
+
+
+def test_first_visit_refreshes_blocks_written_by_an_older_guard(tmp_path):
+    """Repositories installed before repos were recorded still get their old blocks refreshed."""
+    repo = make_repo(tmp_path, str(guard_home() / "hooks"))
+    (repo / "CLAUDE.md").write_text(f"# Mine\n\n{DIRECTIVE_START}\nold directives\n{DIRECTIVE_END}\n", encoding="utf-8")
+    msgs = ensure_repo_setup(repo)
+    assert any("refreshed guard directives" in m for m in msgs)
+    assert "old directives" not in (repo / "CLAUDE.md").read_text(encoding="utf-8")
+
+
+def test_unmarked_directives_warning_says_how_to_fix(tmp_path):
+    doc = tmp_path / "AGENT.md"
+    doc.write_text("# LAYA-OCR-GUARD protocol pasted by hand\n", encoding="utf-8")
+    msg = refresh_directive_block(doc)
+    assert DIRECTIVE_START in msg and "guard hook install --mode agent" in msg
+
+
+def test_update_self_refreshes_with_the_new_binary(monkeypatch):
+    from unittest.mock import patch
+    from typer.testing import CliRunner
+    from guard.cli import app
+
+    calls = []
+
+    def fake_run(cmd, *args, **kwargs):
+        calls.append(cmd)
+
+        class P:
+            returncode = 0
+        return P()
+
+    with patch("guard.cli.perform_self_upgrade", return_value=(True, "upgraded")), \
+         patch("guard.cli.subprocess.run", side_effect=fake_run):
+        result = CliRunner().invoke(app, ["update", "self"])
+    assert result.exit_code == 0
+    assert any(cmd[-2:] == ["hook", "refresh"] for cmd in calls)

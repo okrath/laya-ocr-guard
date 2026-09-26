@@ -159,6 +159,22 @@
         { "files": "guard/domains/detector.py", "require": "if project_items:" }
       ],
       "origin": "llm:guard-1790387683"
+    },
+    {
+      "id": "SELF-UPDATE-REFRESH",
+      "description": "After a successful self-upgrade, the newly installed binary re-execs to run `hook refresh` instead of relying on the old in-process code",
+      "rationale": "Discovered by the LLM gate review",
+      "checks": [
+        { "files": "guard/cli.py", "require": "_refresh_with_new_version" }
+      ],
+      "origin": "llm:guard-1790389155"
+    },
+    {
+      "id": "FIRST-VISIT-REFRESH",
+      "description": "A repository first visited by a newer guard gets its old hook and directive blocks refreshed during initial setup",
+      "rationale": "Discovered by the LLM gate review",
+      "checks": [],
+      "origin": "llm:guard-1790389155"
     }
   ]
 }
