@@ -121,36 +121,30 @@ class SessionManager:
 
     def ensure_gitignore(self):
         """
-        Ensure `.guard/` is ignored by Git.
-        Prefers local `.git/info/exclude` (Stealth mode - leaves zero trace in repo git status).
-        Falls back to `.gitignore` if not in a Git repository.
+        Keep `.guard/` out of Git through the repository's `info/exclude` (never a tracked
+        `.gitignore`). Works in linked worktrees, where `.git` is a file. Outside Git there is
+        nothing to keep clean, so nothing is written.
         """
-        git_dir = self.repo_path / ".git"
-        if git_dir.is_dir():
-            exclude_file = git_dir / "info" / "exclude"
-            try:
-                exclude_file.parent.mkdir(parents=True, exist_ok=True)
-                content = ""
-                if exclude_file.exists():
-                    content = exclude_file.read_text(encoding="utf-8", errors="ignore")
-                lines = [line.strip() for line in content.splitlines()]
-                if ".guard/" not in lines and ".guard" not in lines:
-                    new_content = content.rstrip() + ("\n" if content else "") + "\n# Laya-OCR-Guard stealth local exclude\n.guard/\n"
-                    exclude_file.write_text(new_content, encoding="utf-8")
-                return
-            except Exception:
-                pass
+        import subprocess
 
-        gitignore_path = self.repo_path / ".gitignore"
-        entry = "\n# Laya-OCR-Guard sessions\n.guard/\n"
         try:
-            if gitignore_path.exists():
-                content = gitignore_path.read_text(encoding="utf-8")
-                if ".guard/" not in content and ".guard" not in content:
-                    gitignore_path.write_text(content.rstrip() + entry, encoding="utf-8")
-            else:
-                gitignore_path.write_text(entry.strip() + "\n", encoding="utf-8")
-        except Exception:
+            res = subprocess.run(["git", "-C", str(self.repo_path), "rev-parse", "--git-common-dir"],
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
+        except OSError:
+            return
+        common = res.stdout.strip()
+        if res.returncode != 0 or not common:
+            return
+        git_dir = Path(common) if Path(common).is_absolute() else self.repo_path / common
+        exclude_file = git_dir / "info" / "exclude"
+        try:
+            exclude_file.parent.mkdir(parents=True, exist_ok=True)
+            content = exclude_file.read_text(encoding="utf-8", errors="ignore") if exclude_file.exists() else ""
+            lines = [line.strip() for line in content.splitlines()]
+            if ".guard/" not in lines and ".guard" not in lines:
+                new_content = content.rstrip() + ("\n" if content else "") + "\n# Laya-OCR-Guard local exclude\n.guard/\n"
+                exclude_file.write_text(new_content, encoding="utf-8")
+        except OSError:
             pass
 
     def _get_global_active_session_file(self) -> Path:

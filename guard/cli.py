@@ -55,6 +55,7 @@ from guard.core.project_invariants import (
     evaluate_checks,
     init_invariants_file,
     load_project_invariants,
+    load_shared_invariants,
     removed_or_relaxed,
 )
 from guard.core.simplicity_engine import SimplicityEngine
@@ -397,7 +398,7 @@ def execute_post_task(
         if base_text:
             try:
                 old_items = json.loads(base_text).get("invariants", [])
-                new_items = load_project_invariants(target_repo) or []
+                new_items = load_shared_invariants(target_repo) or []
             except (ValueError, AttributeError, InvariantsFileError):
                 old_items, new_items = [], []
             declared = scope_declared and diff_inspector._is_expected(INVARIANTS_FILENAME, expected_files)
@@ -481,7 +482,7 @@ def execute_post_task(
     # current tree: a rule that fails on the code it was written for is a broken rule.
     if any(f.path == INVARIANTS_FILENAME for f in diff_summary.files):
         try:
-            new_items = load_project_invariants(target_repo) or []
+            new_items = load_shared_invariants(target_repo) or []
         except InvariantsFileError as e:
             violations.append(RuleViolation(rule_id="INV-FILE", severity="CRITICAL", file_path=INVARIANTS_FILENAME, message=str(e)))
         else:
@@ -543,7 +544,7 @@ def execute_post_task(
         approved_fingerprints=(
             {
                 p: _fingerprint(target_repo / p)
-                for p in {f.path for f in diff_summary.files} | ({INVARIANTS_FILENAME} if learned else set())
+                for p in {f.path for f in diff_summary.files}
             } if all_passed else {}
         ),
         learned_invariants=learned,
@@ -675,13 +676,15 @@ app.add_typer(invariants_app, name="invariants")
 @invariants_app.command("init")
 def invariants_init_cmd(
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
+    shared: bool = typer.Option(False, "--shared", help="Create guard.invariants.json in the repository root (to commit for the team)"),
 ):
     """
-    Create guard.invariants.json, importing numbered items under an 'Invariants' / 'Bất biến'
-    heading of AGENT.md / AGENTS.md / CLAUDE.md. Never overwrites an existing file.
+    Create the invariants file, importing numbered items under an 'Invariants' / 'Bất biến'
+    heading of AGENT.md / AGENTS.md / CLAUDE.md. Default: the local, Git-excluded
+    .guard/invariants.json (no repository change). Never overwrites an existing file.
     """
     target_repo = Path(repo).resolve() if repo else Path.cwd().resolve()
-    path, created, imported = init_invariants_file(target_repo)
+    path, created, imported = init_invariants_file(target_repo, shared=shared)
     if not created:
         console.print(f"[yellow]{path} already exists; nothing changed. Run `guard invariants check`.[/yellow]")
         return

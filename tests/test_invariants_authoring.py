@@ -93,13 +93,15 @@ def test_check_command_exit_codes(tmp_path):
     assert runner.invoke(app, ["invariants", "check", "--repo", str(repo)]).exit_code == 2
 
 
-def test_hook_install_creates_the_invariants_file(tmp_path):
+def test_hook_install_creates_local_invariants_only(tmp_path):
     repo = make_repo(tmp_path)
     ok, msgs = HookInstaller(repo).install("git")
     assert ok
-    data = json.loads((repo / "guard.invariants.json").read_text(encoding="utf-8"))
+    data = json.loads((repo / ".guard" / "invariants.json").read_text(encoding="utf-8"))
     assert [i["id"] for i in data["invariants"]] == ["INV-01", "INV-02"]
-    assert any("guard.invariants.json" in m for m in msgs)
+    assert not (repo / "guard.invariants.json").exists()
+    status = subprocess.run(["git", "status", "--porcelain", "-uall"], cwd=repo, capture_output=True, text=True).stdout
+    assert status == ""  # nothing shows up in the repository
 
 
 def test_llm_discovered_invariants_are_validated_then_written(tmp_path):
@@ -124,7 +126,10 @@ def test_llm_discovered_invariants_are_validated_then_written(tmp_path):
     assert post.learned_invariants == ["API-01", "UX-01"]
     assert any(r.startswith("API-02: check does not pass") for r in post.rejected_invariant_proposals)
     assert any(r.startswith("SEND-01: already present") for r in post.rejected_invariant_proposals)
-    written = {i["id"]: i for i in json.loads((repo / "guard.invariants.json").read_text(encoding="utf-8"))["invariants"]}
+    # Learned rules go to the local file; the repository's own rulebook is untouched
+    shared = json.loads((repo / "guard.invariants.json").read_text(encoding="utf-8"))["invariants"]
+    assert [i["id"] for i in shared] == ["SEND-01"]
+    written = {i["id"]: i for i in json.loads((repo / ".guard" / "invariants.json").read_text(encoding="utf-8"))["invariants"]}
     assert written["API-01"]["origin"].startswith("llm:") and written["UX-01"]["checks"] == []
 
     # The learned additions are part of the approval: committing them passes the hook

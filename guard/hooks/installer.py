@@ -307,13 +307,14 @@ class HookInstaller:
             self._inject_directive(self.agent_md_path)
             messages.append(f"Configured Agent directives in {self.agent_md_path.name}")
 
-        # 3. Project invariants file: every guarded repository gets one (never overwritten)
+        # 3. Project invariants: a local, Git-excluded file (never a repository diff)
         from guard.core.project_invariants import init_invariants_file
         inv_path, created, imported = init_invariants_file(self.repo_path)
+        rel = inv_path.relative_to(self.repo_path).as_posix()
         if created:
-            messages.append(f"Created {inv_path.name} ({imported} invariant(s) imported from agent docs)")
+            messages.append(f"Created local {rel} ({imported} invariant(s) imported from agent docs)")
         else:
-            messages.append(f"Kept existing {inv_path.name}")
+            messages.append(f"Kept existing {rel}")
 
         return True, messages
 

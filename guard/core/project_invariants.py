@@ -25,19 +25,58 @@ class InvariantsFileError(ValueError):
     pass
 
 
-def load_project_invariants(repo_path: Path) -> Optional[List[dict]]:
-    """Return the raw invariant dicts, or None when the repo defines no invariants file."""
-    path = repo_path / INVARIANTS_FILENAME
+# Guard never creates a diff in the user's repository. Rules guard generates (lazy setup, rules
+# learned in review) live in a local, Git-excluded file; the repository's guard.invariants.json
+# belongs to the user and is only read.
+LOCAL_INVARIANTS = Path(".guard") / "invariants.json"
+
+
+def local_invariants_path(repo_path: Path) -> Path:
+    return repo_path / LOCAL_INVARIANTS
+
+
+def _read_items(path: Path) -> Optional[List[dict]]:
     if not path.is_file():
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
-        raise InvariantsFileError(f"{INVARIANTS_FILENAME} is not valid JSON: {e}") from e
+        raise InvariantsFileError(f"{path.name} is not valid JSON: {e}") from e
     items = data.get("invariants", []) if isinstance(data, dict) else data
     if not isinstance(items, list):
-        raise InvariantsFileError(f"{INVARIANTS_FILENAME}: 'invariants' must be a list")
+        raise InvariantsFileError(f"{path.name}: 'invariants' must be a list")
     return [i for i in items if isinstance(i, dict) and i.get("id") and i.get("description")]
+
+
+def load_shared_invariants(repo_path: Path) -> Optional[List[dict]]:
+    """The repository's own guard.invariants.json (user-owned, committed), or None."""
+    return _read_items(repo_path / INVARIANTS_FILENAME)
+
+
+def load_local_invariants(repo_path: Path) -> Optional[List[dict]]:
+    """Guard-owned local rules in .guard/invariants.json (never committed), or None."""
+    return _read_items(local_invariants_path(repo_path))
+
+
+def load_project_invariants(repo_path: Path) -> Optional[List[dict]]:
+    """
+    Shared rules plus local rules (a local rule with the same id as a shared one is ignored).
+    None when neither file exists.
+    """
+    shared = load_shared_invariants(repo_path)
+    local = load_local_invariants(repo_path)
+    if shared is None and local is None:
+        return None
+    items = list(shared or [])
+    ids = {str(i["id"]) for i in items}
+    items.extend({**i, "scope": "local"} for i in (local or []) if str(i["id"]) not in ids)
+    return items
+
+
+def ensure_local_excluded(repo_path: Path) -> None:
+    """Keep .guard/ out of Git through info/exclude (never through a tracked .gitignore)."""
+    from guard.core.session import SessionManager
+    SessionManager(repo_path).ensure_gitignore()
 
 
 SKIP_DIRS = {"node_modules", ".git", ".guard", "dist", "build", ".venv", "venv", "__pycache__"}
@@ -164,20 +203,30 @@ def dump_invariants(payload: dict) -> str:
     return "\n".join(["{", *head, '  "invariants": [', ",\n".join(blocks), "  ]", "}"]) + "\n"
 
 
-def write_invariants_file(repo_path: Path, items: List[dict], comment: str = FILE_COMMENT) -> Path:
-    path = repo_path / INVARIANTS_FILENAME
+def write_invariants_file(repo_path: Path, items: List[dict], comment: str = FILE_COMMENT, local: bool = False) -> Path:
+    path = local_invariants_path(repo_path) if local else repo_path / INVARIANTS_FILENAME
+    if local:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_local_excluded(repo_path)
     payload = {"$comment": comment, "invariants": items} if comment else {"invariants": items}
     path.write_text(dump_invariants(payload), encoding="utf-8", newline="\n")
     return path
 
 
-def init_invariants_file(repo_path: Path) -> Tuple[Path, bool, int]:
-    """Create guard.invariants.json if missing. Returns (path, created, imported_count)."""
-    path = repo_path / INVARIANTS_FILENAME
+def init_invariants_file(repo_path: Path, shared: bool = False) -> Tuple[Path, bool, int]:
+    """
+    Create the invariants file if missing. Returns (path, created, imported_count).
+    Default: the local .guard/invariants.json, so nothing appears in the repository. `shared=True`
+    creates guard.invariants.json in the repository root, only when the user asks for it.
+    """
+    shared_path = repo_path / INVARIANTS_FILENAME
+    if shared_path.exists():
+        return shared_path, False, 0
+    path = shared_path if shared else local_invariants_path(repo_path)
     if path.exists():
         return path, False, 0
     items = import_from_agent_docs(repo_path)
-    write_invariants_file(repo_path, items)
+    write_invariants_file(repo_path, items, local=not shared)
     return path, True, len(items)
 
 
@@ -220,16 +269,10 @@ def append_learned_invariants(repo_path: Path, proposals: List[dict], session_id
         descs.add(desc.lower())
         added.append(pid)
     if added:
-        raw = {}
-        path = repo_path / INVARIANTS_FILENAME
-        if path.is_file():
-            try:
-                raw = json.loads(path.read_text(encoding="utf-8"))
-            except ValueError:
-                raw = {}
-        # Keep the file's own header (or lack of one); only the new entries change
-        comment = raw.get("$comment", "") if isinstance(raw, dict) else ""
-        write_invariants_file(repo_path, items, comment=comment)
+        # Learned rules go to the local file: guard never edits the repository's own rulebook
+        local = load_local_invariants(repo_path) or []
+        local.extend(i for i in items if i["id"] in added)
+        write_invariants_file(repo_path, local, comment="", local=True)
     return added, rejected
 
 

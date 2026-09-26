@@ -84,7 +84,8 @@ def test_workspace_install_covers_only_that_folder_and_its_repos(fake_machine, t
         assert DIRECTIVE_START in (ws / doc).read_text(encoding="utf-8")
     for repo in (a, b):
         assert "guard post --hook" in (repo / ".git" / "hooks" / "pre-commit").read_text(encoding="utf-8")
-        assert (repo / "guard.invariants.json").is_file()
+        assert (repo / ".guard" / "invariants.json").is_file()  # local, never a repository diff
+        assert not (repo / "guard.invariants.json").exists()
     assert global_hooks_path() == ""  # nothing global
     assert not (fake_machine / ".claude" / "CLAUDE.md").exists()
 
@@ -106,3 +107,17 @@ def test_workspace_without_git_gets_directives_only(fake_machine, tmp_path):
     ok, msgs = install_workspace(folder)
     assert (folder / "AGENT.md").is_file()
     assert any("only the agent directives apply" in m for m in msgs)
+
+
+def test_workspace_install_in_a_repository_never_creates_a_diff(fake_machine, tmp_path):
+    repo = make_repo(tmp_path / "team-repo")
+    (repo / "CLAUDE.md").write_text("# Team rules\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "docs"], cwd=repo, check=True, capture_output=True)
+
+    ok, msgs = install_workspace(repo)
+    assert (repo / "CLAUDE.md").read_text(encoding="utf-8") == "# Team rules\n"  # tracked: left alone
+    assert any("skipped" in m and "CLAUDE.md" in m for m in msgs)
+    assert DIRECTIVE_START in (repo / "AGENT.md").read_text(encoding="utf-8")  # new file, Git-excluded
+    status = subprocess.run(["git", "status", "--porcelain", "-uall"], cwd=repo, capture_output=True, text=True).stdout
+    assert status == ""

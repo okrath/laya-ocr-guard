@@ -1,5 +1,7 @@
 """
-Lazy repository setup and refresh-after-upgrade of the files guard writes outside its package.
+Lazy repository setup and refresh-after-upgrade. Rule under test: guard never creates a diff in
+the user's repository; it writes only inside .git and the Git-excluded .guard/ folder, and it
+reports (never edits) repository files such as agent docs and hooks kept in the tree.
 """
 
 import subprocess
@@ -15,6 +17,7 @@ from guard.core.repo_setup import (
     guard_home,
     refresh_after_upgrade,
     refresh_directive_block,
+    setup_health,
 )
 from guard.hooks.templates import AGENT_DIRECTIVES_TEMPLATE
 
@@ -22,16 +25,17 @@ AGENT_MD = "# App\n\n## Core invariants\n\n1. **Chat never times out**\n"
 
 
 def git(repo, *args):
-    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+    return subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True).stdout
 
 
-def make_repo(tmp_path: Path, hooks_path: str) -> Path:
+def make_repo(tmp_path: Path, hooks_path: str = "") -> Path:
     repo = tmp_path / "app"
     repo.mkdir()
     git(repo, "init")
     git(repo, "config", "user.email", "t@t")
     git(repo, "config", "user.name", "t")
-    git(repo, "config", "core.hooksPath", hooks_path)
+    if hooks_path:
+        git(repo, "config", "core.hooksPath", hooks_path)
     (repo / "AGENT.md").write_text(AGENT_MD, encoding="utf-8")
     (repo / "package.json").write_text('{"scripts": {"build": "node -e \\"process.exit(0)\\""}}', encoding="utf-8")
     git(repo, "add", ".")
@@ -39,38 +43,58 @@ def make_repo(tmp_path: Path, hooks_path: str) -> Path:
     return repo
 
 
-def test_repo_on_global_hooks_gets_invariants_but_no_hook_edit(tmp_path):
-    global_hooks = guard_home() / "hooks"
-    repo = make_repo(tmp_path, str(global_hooks))
+def assert_clean(repo: Path):
+    assert git(repo, "status", "--porcelain", "-uall") == "", "guard must not create a diff in the repository"
+
+
+def test_setup_creates_local_invariants_and_no_repository_diff(tmp_path):
+    repo = make_repo(tmp_path, str(guard_home() / "hooks"))
     msgs = ensure_repo_setup(repo)
-    assert (repo / "guard.invariants.json").is_file()
-    assert any("guard.invariants.json" in m for m in msgs)
-    assert not (global_hooks / "pre-commit").exists()  # the global hook is installed separately
+    local = repo / ".guard" / "invariants.json"
+    assert local.is_file() and "Chat never times out" in local.read_text(encoding="utf-8")
+    assert not (repo / "guard.invariants.json").exists()
+    assert any("local .guard/invariants.json" in m for m in msgs)
+    assert_clean(repo)
     assert ensure_repo_setup(repo) == []  # second run: nothing to do
 
 
-def test_repo_with_own_hooks_path_gets_guard_block_before_exit(tmp_path):
+def test_hooks_inside_git_dir_are_set_up(tmp_path):
+    repo = make_repo(tmp_path)  # no hooksPath at all: Git runs .git/hooks
+    ensure_repo_setup(repo)
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    assert hook.is_file() and "guard post --hook" in hook.read_text(encoding="utf-8")
+    assert_clean(repo)
+
+
+def test_hooks_kept_in_the_repository_are_never_edited(tmp_path):
     repo = make_repo(tmp_path, ".husky")
     hook = repo / ".husky" / "pre-commit"
     hook.parent.mkdir()
-    hook.write_text("#!/usr/bin/env sh\nnpm run lint\nexit 0\n", encoding="utf-8")
+    hook.write_text("#!/usr/bin/env sh\nnpm run lint\n", encoding="utf-8")
+    git(repo, "add", ".")
+    git(repo, "commit", "--no-verify", "-m", "husky")  # the sample hook itself is not under test
 
     ensure_repo_setup(repo)
-    text = hook.read_text(encoding="utf-8")
-    assert text.startswith("#!/usr/bin/env sh\n" + HOOK_BLOCK_START)  # runs before the trailing exit 0
-    assert "npm run lint\nexit 0\n" in text
-    assert text.count(HOOK_BLOCK_START) == 1
+    assert hook.read_text(encoding="utf-8") == "#!/usr/bin/env sh\nnpm run lint\n"
+    assert HOOK_BLOCK_START not in hook.read_text(encoding="utf-8")
+    assert_clean(repo)
+    # ...and the user is told exactly what to add
+    row = [r for r in setup_health(repo) if r["item"] == "Git hooks"][0]
+    assert row["level"] == "missing" and "guard post --hook" in row["fix"]
 
-    # Idempotent, and a later refresh keeps a single block
+
+def test_repository_agent_docs_are_reported_not_refreshed(tmp_path, monkeypatch):
+    repo = make_repo(tmp_path, str(guard_home() / "hooks"))
+    (repo / "CLAUDE.md").write_text(f"# Team\n\n{DIRECTIVE_START}\nold directives\n{DIRECTIVE_END}\n", encoding="utf-8")
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "docs")
     ensure_repo_setup(repo)
-    assert hook.read_text(encoding="utf-8").count(HOOK_BLOCK_START) == 1
-
-
-def test_repo_without_hook_file_gets_guard_hook(tmp_path):
-    repo = make_repo(tmp_path, ".githooks")
-    ensure_repo_setup(repo)
-    hook = repo / ".githooks" / "pre-commit"
-    assert hook.is_file() and "guard post --hook" in hook.read_text(encoding="utf-8")
+    monkeypatch.setattr(repo_setup, "__version__", "9.9.9")
+    refresh_after_upgrade()
+    assert "old directives" in (repo / "CLAUDE.md").read_text(encoding="utf-8")
+    assert_clean(repo)
+    rows = [r for r in setup_health(repo) if r["item"] == "Agent directives" and r["level"] == "warn"]
+    assert any("guard does not edit it" in r["detail"] for r in rows)
 
 
 def test_directive_block_refresh_only_touches_marked_blocks(tmp_path):
@@ -87,39 +111,23 @@ def test_directive_block_refresh_only_touches_marked_blocks(tmp_path):
     assert refresh_directive_block(unmarked).startswith("WARN")
     assert unmarked.read_text(encoding="utf-8") == "# LAYA-OCR-GUARD protocol, pasted by hand\n"
 
-    plain = tmp_path / "GEMINI.md"
-    plain.write_text("# nothing about guard\n", encoding="utf-8")
-    assert refresh_directive_block(plain) is None
 
-
-def test_refresh_after_upgrade_updates_registered_repos_once(tmp_path, monkeypatch):
-    repo = make_repo(tmp_path, ".husky")
+def test_refresh_after_upgrade_updates_guard_hooks_inside_git_once(tmp_path, monkeypatch):
+    repo = make_repo(tmp_path)
     ensure_repo_setup(repo)
-    hook = repo / ".husky" / "pre-commit"
-    # Simulate a block written by an older guard version
+    hook = repo / ".git" / "hooks" / "pre-commit"
     hook.write_text(hook.read_text(encoding="utf-8").replace("guard post --hook", "guard post"), encoding="utf-8")
-    (repo / "CLAUDE.md").write_text(f"{DIRECTIVE_START}\nold\n{DIRECTIVE_END}\n", encoding="utf-8")
     monkeypatch.setattr(repo_setup, "__version__", "9.9.9")
-
     msgs = refresh_after_upgrade()
-    assert any("guard block" in m for m in msgs) and any("directives" in m for m in msgs)
-    assert "guard post --hook" in hook.read_text(encoding="utf-8")
+    assert msgs and "guard post --hook" in hook.read_text(encoding="utf-8")
     assert refresh_after_upgrade() == []  # once per version
 
 
-def test_pre_ignores_the_invariants_file_setup_just_created(tmp_path):
+def test_pre_with_local_invariants_keeps_the_tree_clean(tmp_path):
     repo = make_repo(tmp_path, str(guard_home() / "hooks"))
     assert execute_pre_task("Fix src/chat.ts", repo_path=repo) is True
-    assert (repo / "guard.invariants.json").is_file()
-
-
-def test_first_visit_refreshes_blocks_written_by_an_older_guard(tmp_path):
-    """Repositories installed before repos were recorded still get their old blocks refreshed."""
-    repo = make_repo(tmp_path, str(guard_home() / "hooks"))
-    (repo / "CLAUDE.md").write_text(f"# Mine\n\n{DIRECTIVE_START}\nold directives\n{DIRECTIVE_END}\n", encoding="utf-8")
-    msgs = ensure_repo_setup(repo)
-    assert any("refreshed guard directives" in m for m in msgs)
-    assert "old directives" not in (repo / "CLAUDE.md").read_text(encoding="utf-8")
+    assert (repo / ".guard" / "invariants.json").is_file()
+    assert_clean(repo)
 
 
 def test_unmarked_directives_warning_says_how_to_fix(tmp_path):

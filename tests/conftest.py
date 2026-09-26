@@ -4,8 +4,15 @@ from unittest.mock import patch
 
 @pytest.fixture(autouse=True)
 def isolate_guard_home(tmp_path_factory, monkeypatch):
-    """Registry, refresh state and global hooks dir live in a throwaway GUARD_HOME."""
-    monkeypatch.setenv("GUARD_HOME", str(tmp_path_factory.mktemp("guard_home")))
+    """
+    Registry, refresh state and global hooks dir live in a throwaway GUARD_HOME, and Git reads a
+    throwaway global config, so tests never use (or run) the machine's real global hooks.
+    """
+    home = tmp_path_factory.mktemp("guard_home")
+    monkeypatch.setenv("GUARD_HOME", str(home))
+    gitconfig = home / "gitconfig"
+    gitconfig.write_text("[user]\n\tname = guard-tests\n\temail = tests@guard.local\n", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
 
 
 @pytest.fixture(autouse=True)

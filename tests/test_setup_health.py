@@ -37,7 +37,7 @@ def test_old_install_reports_what_is_missing_and_how_to_fix(fake_machine, tmp_pa
     rows = by_item(setup_health(repo))
     assert rows[("Git hooks", "missing")]["fix"].startswith("guard install")
     assert rows[("Agent directives", "missing")]["fix"].startswith("guard install")
-    assert rows[("Invariants", "warn")]["fix"] == "guard invariants init"
+    assert rows[("Invariants", "warn")]["fix"].startswith("guard invariants init")
 
 
 def test_complete_install_reports_ok(fake_machine, tmp_path):
@@ -57,23 +57,29 @@ def test_unmarked_directives_are_a_warning_with_instructions(fake_machine, tmp_p
     assert "START/END markers" in rows[0]["fix"]
 
 
-def test_repo_with_own_hooks_path_is_reported_until_refreshed(fake_machine, tmp_path):
+def test_hooks_kept_in_the_repository_are_reported_with_the_line_to_add(fake_machine, tmp_path):
     repo = make_repo(tmp_path / "app")
     install_global(tmp_path)
     subprocess.run(["git", "config", "core.hooksPath", ".husky"], cwd=repo, check=True)
     (repo / ".husky").mkdir()
-    (repo / ".husky" / "pre-commit").write_text("#!/bin/sh\nnpm test\n", encoding="utf-8")
-    assert ("Repository hook", "missing") in by_item(setup_health(repo))
+    hook = repo / ".husky" / "pre-commit"
+    hook.write_text("#!/bin/sh\nnpm test\n", encoding="utf-8")
 
-    # The recommended fix works even for a repository guard already recorded
+    row = by_item(setup_health(repo))[("Repository hook", "missing")]
+    assert "guard does not edit repository files" in row["detail"]
+    assert "guard post --hook" in row["fix"] and str(hook) in row["fix"]
+
+    # Neither setup nor refresh edits a hook that lives in the repository tree
     from guard.core.repo_setup import ensure_repo_setup
     ensure_repo_setup(repo)
-    (repo / ".husky" / "pre-commit").write_text("#!/bin/sh\nnpm test\n", encoding="utf-8")  # husky re-generated it
-    assert ("Repository hook", "missing") in by_item(setup_health(repo))
-    result = CliRunner().invoke(app, ["hook", "refresh", "--repo", str(repo)])
-    assert result.exit_code == 0
+    assert CliRunner().invoke(app, ["hook", "refresh", "--repo", str(repo)]).exit_code == 0
+    assert hook.read_text(encoding="utf-8") == "#!/bin/sh\nnpm test\n"
+
+    # Once the user adds the recommended line, the check is satisfied
+    from guard.core.repo_setup import MANUAL_HOOK_LINE
+    assert MANUAL_HOOK_LINE in row["fix"]
+    hook.write_text(f"#!/bin/sh\nnpm test\n{MANUAL_HOOK_LINE}\n", encoding="utf-8")
     assert ("Repository hook", "missing") not in by_item(setup_health(repo))
-    assert "npm test" in (repo / ".husky" / "pre-commit").read_text(encoding="utf-8")
 
 
 def test_first_command_after_upgrade_prints_the_check_once(fake_machine, tmp_path, monkeypatch, capsys):

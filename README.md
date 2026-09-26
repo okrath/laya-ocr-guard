@@ -231,14 +231,16 @@ The older `guard hook install` still works: without options it runs `guard insta
 
 > 🔒 **Strict Safe-Append Policy:** Guard NEVER overwrites existing user `CLAUDE.md` or `AGENT.md` directives. It creates a `.guard.bak` backup and cleanly appends Guard protocol markers. Uninstallation cleanly restores user files.
 
-**Automatic repository setup.** The first time guard runs inside a Git repository (`guard pre`, `guard post`, `guard hook install`), it:
-- creates `guard.invariants.json` when missing, importing the agent docs' invariant section;
-- checks which hook directory Git really uses there. With the global hooks nothing is added. When the repository sets its own `core.hooksPath` (for example husky's `.husky`), the global hook never runs, so guard inserts a marked block (`# >>> LAYA-OCR-GUARD >>>`) right after the shebang of that `pre-commit` (or creates it). Existing hook commands are kept.
+> 🧾 **Guard never creates a diff in your repository.** Inside a repository it writes only where Git tracks nothing: the `.git` directory and the `.guard/` folder, which it keeps out of Git through `.git/info/exclude` (never through `.gitignore`). Files that belong to the repository (agent docs, hooks kept in the tree such as `.husky/`, `guard.invariants.json`) are only read. When one of them needs a change, `guard doctor` tells you what to change; you decide.
+
+**Automatic repository setup.** The first time guard runs inside a Git repository (`guard pre`, `guard post`, `guard install`), it:
+- creates the local `.guard/invariants.json` when the repository has no invariants yet, importing the agent docs' invariant section;
+- checks which hook directory Git really uses. With the global hooks nothing is added. When Git runs hooks from inside `.git`, guard makes that `pre-commit` call guard. When the repository keeps its hooks in its own tree (for example husky's `.husky`), guard does not touch them; the setup check shows the one line to add;
 - records the repository in `~/.guard/repos.json`.
 
 Outside a Git repository only the agent directives apply.
 
-**Refresh after an upgrade.** The first guard command after a version change rewrites, only where guard wrote them before: the global hooks (when `core.hooksPath` points at `~/.guard/hooks`), the guard block in hooks of recorded repositories, and the directive block between the `LAYA-OCR-GUARD DUAL-GATE HOOK: START/END` markers in agent docs (the repositories' `CLAUDE.md`/`AGENT.md`/`AGENTS.md`/`GEMINI.md` and the global `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`, `~/.config/opencode/AGENTS.md`). Guard directives pasted without markers are reported, never rewritten. `guard hook refresh` runs the same refresh on demand.
+**Refresh after an upgrade.** The first guard command after a version change rewrites what guard owns: the global hooks (when `core.hooksPath` points at `~/.guard/hooks`), guard hooks inside `.git` of recorded repositories, and the directive block between the `LAYA-OCR-GUARD DUAL-GATE HOOK: START/END` markers in your global agent docs (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`, `~/.config/opencode/AGENTS.md`). Agent docs inside repositories are never rewritten; an outdated or unmarked guard section there is reported by the setup check. `guard hook refresh` runs the same refresh on demand.
 ### 2. Pre-Task Phase (`guard pre`)
 Execute before modifying source code:
 ```bash
@@ -258,13 +260,21 @@ Gate rules that keep the pre-task gate meaningful:
 - Paths come from `git status --porcelain -z`, so renamed files and names with spaces or Vietnamese characters are tracked correctly. Globs are accepted only via `--scope`: prose such as "do not edit *.css" never widens scope.
 
 #### Project invariants (`guard.invariants.json`)
-Each guarded repository keeps its own `guard.invariants.json` in its root directory, committed with the code. It turns the rules an agent is told to respect (for example the invariant section of `AGENT.md`) into checks guard runs on every task, replacing the generic domain templates.
+Invariants turn the rules an agent is told to respect (for example the invariant section of `AGENT.md`) into checks guard runs on every task, replacing the generic domain templates. They come from two files, which guard merges:
+
+| File | Owner | In Git |
+|---|---|---|
+| `.guard/invariants.json` | guard (setup, `guard invariants init`, rules learned in review) | never (Git-excluded) |
+| `guard.invariants.json` in the repository root | the user or team | committed by the user, read-only for guard |
+
+A rule in the repository file wins over a local rule with the same id.
 
 ```bash
-guard invariants init    # create the file; imports numbered items under an "Invariants" / "Bất biến" heading of AGENT.md / AGENTS.md / CLAUDE.md
-guard invariants check   # evaluate every check on the current code, no session needed (exit 1 = a check fails, 2 = file missing/invalid)
+guard invariants init            # create the local file; imports numbered items under an "Invariants" / "Bất biến" heading of AGENT.md / AGENTS.md / CLAUDE.md
+guard invariants init --shared   # create guard.invariants.json in the repository root instead, to commit for the team
+guard invariants check           # evaluate every check on the current code, no session needed (exit 1 = a check fails, 2 = file missing/invalid)
 ```
-`guard hook install` creates the file too (in every mode) and never overwrites an existing one. Imported entries start without checks (`UNVERIFIED`) until you add them:
+Setup creates the local file automatically and never overwrites an existing one. Imported entries start without checks (`UNVERIFIED`) until you add them:
 ```json
 {"invariants": [
   {"id": "CHAT-01", "description": "Chat requests never time out",
@@ -274,7 +284,7 @@ guard invariants check   # evaluate every check on the current code, no session 
 ```
 Every check runs on the current file contents. `forbid` fails when any matched file contains the regex, and `require` fails when none of them does. A check whose `files` glob matches nothing also fails, and so does an invalid regex. A malformed `guard.invariants.json` makes `guard pre` stop with the parse error. Invariants without checks are reported as `UNVERIFIED` (manual) and never counted as passed. A check that was already failing when pre ran is reported as `BASELINE_FAILED` (a warning), so an old defect does not block unrelated tasks; a check that starts failing during the task blocks approval. When a task adds or edits `guard.invariants.json`, post also self-checks the new file on the current tree (`... (new guard.invariants.json, self-check)`), so a rule that fails on the code it was written for blocks approval. This repository's own gate-integrity invariants live in [`guard.invariants.json`](guard.invariants.json).
 
-**Rules learned during review.** The LLM gate may propose durable rules it notices in the diff (`INVARIANTS:` section of its answer). Guard writes a proposal into `guard.invariants.json` only when its id and description are new and its check passes on the current code; it is tagged `"origin": "llm:<session>"`, listed under "Invariants learned in this review", and enforced from the next `guard pre`. The additions are part of the approved change, so they are committed with the task. Rejected proposals are listed with the reason.
+**Rules learned during review.** The LLM gate may propose durable rules it notices in the diff (`INVARIANTS:` section of its answer). Guard writes a proposal into the local `.guard/invariants.json` (never into the repository's file) only when its id and description are new and its check passes on the current code; it is tagged `"origin": "llm:<session>"`, listed under "Invariants learned in this review", and enforced from the next `guard pre`. To share a learned rule with the team, copy it into `guard.invariants.json` yourself. Rejected proposals are listed with the reason.
 
 **The rulebook cannot be weakened as a side effect.** Adding invariants never counts as out of scope. Removing an invariant or changing its checks raises `INV-WEAKENED`: CRITICAL (blocks) unless the task declares `guard.invariants.json` in its scope, in which case it is HIGH and left to the reviewer.
 
@@ -351,7 +361,9 @@ Old installations (per-repository hooks, directives pasted without markers, no i
 |---|---|
 | Git hooks missing / commits not checked | `guard install` (or `guard install --workspace <dir>`) |
 | Agent directives missing (no agent is told to run guard) | `guard install` (or `guard install --workspace <dir>`) |
-| Repository sets its own `core.hooksPath` and its hook does not call guard | `guard hook refresh` inside the repository |
+| Repository hook does not call guard (hooks inside `.git`) | `guard hook refresh` inside the repository |
+| Repository keeps its hooks in its tree (e.g. `.husky/`) | add the line the check prints to that `pre-commit` (guard does not edit repository files) |
+| Repository agent doc has an older or unmarked guard section | update or remove it yourself (guard does not edit repository files) |
 | Guard directives without START/END markers | wrap the guard section as shown below, or delete it and run `guard install` |
 | No `guard.invariants.json` / invariants without checks | `guard invariants init`, then add checks and run `guard invariants check` |
 | Laya model never calibrated (optional) | `guard laya calibrate` |

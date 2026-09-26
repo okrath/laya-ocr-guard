@@ -112,7 +112,7 @@ Global writes the marked guard block into `~/.claude/CLAUDE.md`, `~/.codex/AGENT
 
 Manages Git hooks, AI Agent directives, and multi-repo workspace protection. `guard hook install` without options runs `guard install`; its options keep the previous per-repository behavior.
 
-After `guard install`, every repository is set up automatically the first time guard runs in it: `guard.invariants.json` is created when missing, and when the repository uses its own `core.hooksPath` (the global hook does not run there) a marked guard block is inserted after the shebang of its `pre-commit`. `guard hook refresh` rewrites what guard installed earlier to the current version; the same refresh runs once automatically after each upgrade.
+After `guard install`, every repository is set up automatically the first time guard runs in it, without creating any repository diff: the local, Git-excluded `.guard/invariants.json` is created when the repository has no invariants, and a guard hook is added only when Git runs hooks from inside `.git`. Hooks kept in the repository tree (e.g. `.husky/`) and repository agent docs are never edited; `guard doctor` shows what to change. `guard hook refresh` rewrites what guard installed earlier to the current version; the same refresh runs once automatically after each upgrade.
 
 ```bash
 guard hook install          # same as `guard install` when used without options
@@ -145,7 +145,7 @@ guard hook uninstall [--mode <git|agent|all>] [--global]
 * `-m, --mode <git|agent|all>`: Installation mode (`git`, `agent`, `all`).
 * `-s, --stealth`: Shortcut for `--mode git` (Git hooks only, no `CLAUDE.md`/`AGENT.md`).
 
-Every install mode creates `guard.invariants.json` when it is missing (see `guard invariants init`) and never overwrites an existing one.
+Every install mode creates the local `.guard/invariants.json` when the repository has no invariants (see `guard invariants init`) and never overwrites an existing file.
 * `-g, --global`: Configure Git hooks globally for all repositories via `git config --global core.hooksPath ~/.guard/hooks`.
 * `--all-repos`: Automatically install Git hooks into all discovered child Git repositories in workspace mode.
 * `--select-repos <indices|names>`: Comma-separated list of child repo numbers (e.g. `2,3,7,8`) or folder names.
@@ -158,8 +158,11 @@ Every install mode creates `guard.invariants.json` when it is missing (see `guar
 Create and validate the project's `guard.invariants.json` (kept in the root directory of each guarded repository).
 
 ```bash
-# Create the file; imports numbered items under an "Invariants" (or Vietnamese "Bất biến") heading of AGENT.md / AGENTS.md / CLAUDE.md:
+# Create the local, Git-excluded .guard/invariants.json; imports numbered items under an "Invariants" (or Vietnamese "Bất biến") heading of AGENT.md / AGENTS.md / CLAUDE.md:
 guard invariants init
+
+# Create guard.invariants.json in the repository root instead, to commit for the team:
+guard invariants init --shared
 
 # Evaluate every check on the current code, without a session (exit 1: a check fails, exit 2: file missing or invalid):
 guard invariants check

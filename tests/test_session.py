@@ -55,10 +55,8 @@ def test_session_lifecycle(temp_repo):
     assert session.pre is not None
     assert session.pre.expected_files == ["src/Checkout.tsx"]
 
-    # Check gitignore
-    gitignore = temp_repo / ".gitignore"
-    assert gitignore.exists()
-    assert ".guard/" in gitignore.read_text(encoding="utf-8")
+    # Guard never creates or edits a .gitignore (outside Git there is nothing to keep clean)
+    assert not (temp_repo / ".gitignore").exists()
 
     # 2. Complete Post-Session
     post_rec = PostTaskRecord(

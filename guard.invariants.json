@@ -227,6 +227,17 @@
       "rationale": "Discovered by the LLM gate review",
       "checks": [],
       "origin": "llm:guard-1790391467"
+    },
+    {
+      "id": "NODIFF-01",
+      "description": "Guard never creates a diff in a user's repository: it writes only inside .git and the Git-excluded .guard/ folder, keeps .guard/ out of Git through info/exclude (never .gitignore), and learned or auto-created invariants go to the local file.",
+      "rationale": "Guard edited repository agent docs, tracked hooks and guard.invariants.json, which users then had to explain in review.",
+      "checks": [
+        { "files": "guard/core/repo_setup.py", "require": "_inside_git_dir\\(hooks, repo\\)" },
+        { "files": "guard/core/repo_setup.py", "require": "if doc.exists\\(\\) and _is_tracked\\(doc\\):" },
+        { "files": "guard/core/session.py", "forbid": "gitignore_path\\.write_text" },
+        { "files": "guard/core/project_invariants.py", "require": "write_invariants_file\\(repo_path, local, comment=\"\", local=True\\)" }
+      ]
     }
   ]
 }

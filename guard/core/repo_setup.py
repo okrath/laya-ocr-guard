@@ -1,13 +1,16 @@
 """
 Zero-touch setup and refresh of the files guard writes outside its own package.
 
-- Setup happens lazily: the first time guard runs inside a Git repository it creates
-  guard.invariants.json and, when the repository overrides `core.hooksPath` (so the global
-  guard hook never runs there), adds a guard block to that repository's own pre-commit hook.
+Rule: guard never creates a diff in a user's repository. Inside a repository it writes only
+where Git does not track anything (the .git directory and the Git-excluded .guard/ folder).
+Repository files (agent docs, hooks kept in the tree such as .husky/, guard.invariants.json)
+are only read; when they need a change, the setup check tells the user what to do.
+
+- Setup happens lazily: the first time guard runs inside a Git repository it creates the local
+  .guard/invariants.json and, when Git runs hooks from inside .git, makes that hook call guard.
 - Refresh happens when the installed guard version changes (e.g. after `guard update self`):
-  global hooks, guard blocks in repository hooks, and the directive block in agent docs are
-  rewritten, but only where guard already wrote them. Files without guard markers are never
-  touched; a guard block without markers is only reported.
+  global hooks, guard hooks inside .git of recorded repositories, and the marked directive
+  block in the user's global agent docs (home directory) are rewritten.
 """
 
 from __future__ import annotations
@@ -26,6 +29,9 @@ DIRECTIVE_START = "<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: START === -->"
 DIRECTIVE_END = "<!-- === LAYA-OCR-GUARD DUAL-GATE HOOK: END === -->"
 HOOK_BLOCK_START = "# >>> LAYA-OCR-GUARD >>>"
 HOOK_BLOCK_END = "# <<< LAYA-OCR-GUARD <<<"
+# One line a user can add to a hook kept in their repository (guard never edits it).
+# Skips when guard is not installed, so it never blocks a commit on a machine without guard.
+MANUAL_HOOK_LINE = "if command -v guard >/dev/null 2>&1; then guard post --hook || exit 1; fi  # LAYA-OCR-GUARD"
 HOOK_BLOCK = f"""{HOOK_BLOCK_START}
 # Added by guard: this repository sets its own core.hooksPath, so the global guard hook does not run here.
 if command -v guard >/dev/null 2>&1; then
@@ -106,6 +112,20 @@ def _write_exec(path: Path, content: str) -> None:
         pass
 
 
+def _inside_git_dir(path: Path, repo: Path) -> bool:
+    """True when `path` lies in the repository's Git directory (nothing there is ever committed)."""
+    common = _git(repo, "rev-parse", "--git-common-dir")
+    if not common:
+        return False
+    git_dir = Path(common)
+    git_dir = (git_dir if git_dir.is_absolute() else repo / git_dir).resolve()
+    try:
+        path.resolve().relative_to(git_dir)
+        return True
+    except ValueError:
+        return False
+
+
 def _ensure_hook_block(hook: Path) -> Optional[str]:
     """Make `hook` run guard. Returns a message when the file changed."""
     from guard.hooks.templates import GIT_PRE_COMMIT_HOOK
@@ -157,18 +177,15 @@ def refresh_directive_block(doc: Path) -> Optional[str]:
 
 
 def refresh_repo(repo: Path) -> List[str]:
-    """Refresh guard-owned hook blocks and directive blocks inside one repository."""
+    """
+    Make the hook Git runs for this repository call guard, but only when that hook lives inside
+    .git (untracked). Hooks kept in the repository tree and agent docs are never edited; the
+    setup check reports them instead.
+    """
     messages: List[str] = []
     hooks = effective_hooks_dir(repo)
-    global_dir = guard_home() / "hooks"
-    if hooks and not _same(hooks, global_dir):
-        # The repository runs its own hooks (the global hook never runs here): make sure they call
-        # guard, adding the block when missing (e.g. husky was set up after guard) or updating it
+    if hooks and not _same(hooks, guard_home() / "hooks") and _inside_git_dir(hooks, repo):
         msg = _ensure_hook_block(hooks / "pre-commit")
-        if msg:
-            messages.append(msg)
-    for name in AGENT_DOC_NAMES:
-        msg = refresh_directive_block(repo / name)
         if msg:
             messages.append(msg)
     return messages
@@ -192,14 +209,9 @@ def ensure_repo_setup(start: Path, create_invariants: bool = True) -> List[str]:
             from guard.core.project_invariants import init_invariants_file
             path, created, imported = init_invariants_file(repo)
             if created:
-                messages.append(f"created {path.name} ({imported} invariant(s) imported from agent docs); commit it with your code")
-        hooks = effective_hooks_dir(repo)
-        if hooks and not _same(hooks, guard_home() / "hooks"):
-            msg = _ensure_hook_block(hooks / "pre-commit")
-            if msg:
-                messages.append(msg)
-        # A repository set up by an older guard (before repositories were recorded) may carry
-        # outdated guard blocks: refresh them on this first visit too.
+                messages.append(f"created local {path.relative_to(repo).as_posix()} ({imported} invariant(s) imported "
+                                "from agent docs); it is Git-excluded and never part of the repository")
+        # Hook inside .git only; also refreshes a guard hook written by an older version
         messages.extend(refresh_repo(repo))
     elif known.get("version") != __version__:
         messages.extend(refresh_repo(repo))
@@ -362,9 +374,8 @@ def install_workspace(folder: Path) -> Tuple[bool, List[str]]:
     from guard.hooks.installer import HookInstaller
 
     folder = folder.resolve()
-    messages = [add_directive_block(folder / name) for name in ("CLAUDE.md", "AGENT.md")]
-    if (folder / "AGENTS.md").is_file():
-        messages.append(add_directive_block(folder / "AGENTS.md"))
+    names = ["CLAUDE.md", "AGENT.md"] + (["AGENTS.md"] if (folder / "AGENTS.md").is_file() else [])
+    messages = [_add_workspace_doc(folder, folder / name) for name in names]
     repos = _workspace_repos(folder)
     for repo in repos:
         ok, msgs = HookInstaller(repo).install(mode="git")
@@ -373,6 +384,43 @@ def install_workspace(folder: Path) -> Tuple[bool, List[str]]:
     if not repos:
         messages.append("no Git repository in this workspace: only the agent directives apply")
     return True, messages
+
+
+def _is_tracked(path: Path) -> bool:
+    res = _git(path.parent, "ls-files", "--error-unmatch", path.name)
+    return res is not None
+
+
+def _add_workspace_doc(folder: Path, doc: Path) -> str:
+    """
+    Add the directive block to a workspace doc without creating a repository diff: a doc that
+    Git tracks is left alone, and a doc guard creates inside a repository is Git-excluded.
+    """
+    root = git_root(folder)
+    if root is None:
+        return add_directive_block(doc)
+    if doc.exists() and _is_tracked(doc):
+        return (f"WARN skipped {doc}: it is part of the repository and guard does not edit repository files. "
+                "Add the guard directives yourself, or use `guard install` (global agent docs)")
+    created = not doc.exists()
+    msg = add_directive_block(doc)
+    if created:
+        _exclude_path(root, doc)
+    return msg
+
+
+def _exclude_path(repo: Path, path: Path) -> None:
+    """Add `path` to the repository's info/exclude (works in linked worktrees too)."""
+    common = _git(repo, "rev-parse", "--git-common-dir")
+    if not common:
+        return
+    git_dir = Path(common) if Path(common).is_absolute() else repo / common
+    exclude = git_dir / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    rel = "/" + path.resolve().relative_to(repo.resolve()).as_posix()
+    text = exclude.read_text(encoding="utf-8", errors="ignore") if exclude.exists() else ""
+    if rel not in [line.strip() for line in text.splitlines()]:
+        exclude.write_text(text.rstrip() + ("\n" if text else "") + rel + "\n", encoding="utf-8")
 
 
 def uninstall_workspace(folder: Path) -> List[str]:
@@ -455,12 +503,20 @@ def setup_health(cwd: Path) -> List[Dict[str, str]]:
         if repo:
             eff = effective_hooks_dir(repo)
             if eff and not _same(eff, guard_home() / "hooks") and not _hook_calls_guard(eff / "pre-commit"):
-                add("missing", "Repository hook", f"{repo.name} sets its own core.hooksPath ({eff}) and its pre-commit does not call guard",
-                    "guard hook refresh   (run inside the repository)")
+                if _inside_git_dir(eff, repo):
+                    add("missing", "Repository hook", f"{repo.name} runs hooks from {eff} and its pre-commit does not call guard",
+                        "guard hook refresh   (run inside the repository)")
+                else:
+                    add("missing", "Repository hook",
+                        f"{repo.name} keeps its hooks in the repository ({eff}); guard does not edit repository files",
+                        f"add this line to {eff / 'pre-commit'}:  {MANUAL_HOOK_LINE}")
     elif repo:
         eff = effective_hooks_dir(repo)
         if eff and _hook_calls_guard(eff / "pre-commit"):
             add("ok", "Git hooks", f"repository hook in {eff}")
+        elif eff and not _inside_git_dir(eff, repo):
+            add("missing", "Git hooks", f"{repo.name} keeps its hooks in the repository ({eff}); guard does not edit repository files",
+                f"add this line to {eff / 'pre-commit'}:  {MANUAL_HOOK_LINE}")
         else:
             add("missing", "Git hooks", f"commits in {repo.name} are not checked by guard", install_fix)
     else:
@@ -471,11 +527,17 @@ def setup_health(cwd: Path) -> List[Dict[str, str]]:
     local_docs = _local_agent_docs(cwd)
     states = {d: _doc_state(d) for d in global_docs + local_docs}
     marked = [d for d, s in states.items() if s == "marked"]
+    current = _directive_block()
     for d, s in states.items():
+        in_home = d in global_docs
         if s == "unmarked":
-            add("warn", "Agent directives", f"{d} has guard directives without START/END markers, so upgrades cannot refresh them",
-                "wrap the guard section in guard's START/END markers (README: 'Refresh after an upgrade'), "
+            add("warn", "Agent directives",
+                f"{d} has guard directives without START/END markers" + ("" if in_home else " (repository file: guard does not edit it)"),
+                "wrap the guard section in guard's START/END markers (README: 'Upgrading from an older version'), "
                 "or delete it and run guard install")
+        elif s == "marked" and not in_home and current not in d.read_text(encoding="utf-8", errors="ignore"):
+            add("warn", "Agent directives", f"{d} carries an older guard directive block (repository file: guard does not edit it)",
+                "update it yourself if the team wants the new rules, or remove it and rely on `guard install` (global)")
     if marked:
         add("ok", "Agent directives", ", ".join(str(d) for d in marked))
     elif not any(s == "unmarked" for s in states.values()):
@@ -483,16 +545,16 @@ def setup_health(cwd: Path) -> List[Dict[str, str]]:
 
     # 3. Project invariants
     if repo:
-        from guard.core.project_invariants import INVARIANTS_FILENAME, InvariantsFileError, load_project_invariants
+        from guard.core.project_invariants import InvariantsFileError, load_project_invariants
         try:
             items = load_project_invariants(repo)
         except InvariantsFileError as e:
             add("missing", "Invariants", str(e), "fix the file, then guard invariants check")
         else:
             if items is None:
-                add("warn", "Invariants", f"{repo.name} has no {INVARIANTS_FILENAME}", "guard invariants init")
+                add("warn", "Invariants", f"{repo.name} has no project invariants", "guard invariants init   (local, not committed)")
             elif not items:
-                add("warn", "Invariants", f"{INVARIANTS_FILENAME} is empty; generic domain templates are used",
+                add("warn", "Invariants", "the invariants file is empty; generic domain templates are used",
                     "add project rules, then guard invariants check")
             else:
                 unchecked = sum(1 for i in items if not i.get("checks"))
