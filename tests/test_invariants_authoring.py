@@ -172,3 +172,10 @@ def test_appending_a_learned_rule_keeps_existing_entries_byte_identical(tmp_path
     after = (repo / "guard.invariants.json").read_text(encoding="utf-8")
     assert after.startswith(original.rsplit("\n  ]", 1)[0])  # old block untouched, new one appended
     assert "$comment" not in after  # no header injected into a file that had none
+
+
+def test_markdown_escapes_are_removed_from_proposed_globs_and_regexes():
+    from guard.core.llm_reviewer import _parse_invariant_proposals
+    text = "INVARIANTS:\n- X-1 | d | guard/core/project\\_invariants.py | require | def \\_model\\_fingerprint\n"
+    check = _parse_invariant_proposals(text)[0]["checks"][0]
+    assert check == {"files": "guard/core/project_invariants.py", "require": "def _model_fingerprint"}

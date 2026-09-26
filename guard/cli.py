@@ -36,6 +36,7 @@ from guard.core.hygiene_engine import HygieneEngine
 from guard.core.llm_reviewer import LLMReviewerEngine, ReviewVerdict
 from guard.core.ocr_engine import GitDiffInspector, OCRRulebookRunner, RuleViolation
 from guard.core.removal_check import check_removed_symbols
+from guard.core.repo_setup import ensure_repo_setup, git_root, refresh_after_upgrade, refresh_repo
 from guard.core.project_invariants import (
     INVARIANTS_FILENAME,
     InvariantsFileError,
@@ -58,6 +59,7 @@ from guard.core.updater import (
 )
 from guard.domains.detector import (
     analyzer_domain,
+    detect_domain,
     detect_build_command,
     detect_repo_domain,
     extract_contracts_and_invariants,
@@ -151,6 +153,9 @@ def execute_pre_task(
     force: bool = False,
 ) -> bool:
     target_repo = Path(repo_path or Path.cwd()).resolve()
+    invariants_existed = (target_repo / INVARIANTS_FILENAME).exists()
+    for msg in ensure_repo_setup(target_repo):
+        console.print(f"[cyan]🔧 guard setup: {msg}[/cyan]")
     config = load_config(target_repo)
     laya = LayaEngine(model_name=config.laya.model_name, device=config.laya.device)
     session_mgr = SessionManager(target_repo)
@@ -190,6 +195,9 @@ def execute_pre_task(
         }]
     else:
         working_files = diff_inspector.get_working_files()
+        if not invariants_existed:
+            # The file guard setup just created is not the user's pending work
+            working_files = [f for f in working_files if f != INVARIANTS_FILENAME]
         if working_files and not allow_dirty:
             listing = "\n".join(f"  • {f}" for f in working_files[:20])
             more = f"\n  … and {len(working_files) - 20} more" if len(working_files) > 20 else ""
@@ -207,8 +215,7 @@ def execute_pre_task(
         restarts = []
 
     # 1. Domain comes from the repository itself; the prompt-based triage is only a hint.
-    repo_analyzer = detect_repo_domain(target_repo)
-    domain = analyzer_domain(repo_analyzer)
+    domain = detect_domain(target_repo)
 
     # 2. Laya System 1 Triage (<30ms)
     triage = laya.triage(prompt=prompt, context_files=candidate_files)
@@ -273,6 +280,8 @@ def execute_post_task(
     hook: bool = False,
 ) -> bool:
     target_repo = Path(repo_path or Path.cwd()).resolve()
+    for msg in ensure_repo_setup(target_repo, create_invariants=not hook):
+        console.print(f"[cyan]🔧 guard setup: {msg}[/cyan]")
     config = load_config(target_repo)
     session_mgr = SessionManager(target_repo)
     # In a git hook only this repo's own session counts; never adopt another repo's session.
@@ -776,6 +785,26 @@ hook_app = typer.Typer(
 app.add_typer(hook_app, name="hook")
 
 
+@hook_app.command("refresh")
+def hook_refresh_cmd(
+    repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Also set up / refresh this repository"),
+):
+    """
+    Rewrite what guard installed earlier to the current version: global hooks, guard blocks in
+    repository hooks and the directive block in agent docs (only where guard markers exist).
+    """
+    target = Path(repo).resolve() if repo else Path.cwd().resolve()
+    messages = refresh_after_upgrade(force=True) + ensure_repo_setup(target, create_invariants=False) + refresh_repo_if_git(target)
+    for msg in messages or ["everything is already up to date"]:
+        style = "yellow" if msg.startswith("WARN") else "green"
+        console.print(f"[{style}]• {msg}[/{style}]")
+
+
+def refresh_repo_if_git(path: Path) -> List[str]:
+    root = git_root(path)
+    return refresh_repo(root) if root else []
+
+
 @hook_app.command("install")
 def hook_install_cmd(
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Target repository directory"),
@@ -786,8 +815,13 @@ def hook_install_cmd(
     select_repos: Optional[str] = typer.Option(None, "--select-repos", help="Comma-separated indices (1,2) or names of child repositories"),
 ):
     """
-    Install Guard hooks and/or AI agent directives into target repository or workspace.
+    Install Guard hooks. Without options this installs the global hooks (every repository on
+    the machine); each repository is then set up lazily the first time guard runs in it.
+    Options keep the per-repository / workspace modes.
     """
+    if not any([repo, mode, stealth, all_repos, select_repos]):
+        global_hooks = True  # default: one global install instead of one per folder
+
     if global_hooks:
         console.print("[cyan]Configuring Global Git Hooks (~/.guard/hooks)...[/cyan]")
         success, msgs = HookInstaller.install_global_git_hooks()
@@ -798,6 +832,10 @@ def hook_install_cmd(
         else:
             console.print("[bold red]❌ Failed to configure global Git hooks.[/bold red]")
             raise typer.Exit(code=1)
+        # Set up the current repository now instead of on the first guard run
+        for msg in ensure_repo_setup(Path.cwd()):
+            console.print(f"[green]• {msg}[/green]")
+        console.print("[dim]Other repositories are set up automatically the first time guard runs in them.[/dim]")
         return
 
     target_path = Path(repo).resolve() if repo else Path.cwd().resolve()
@@ -1058,7 +1096,7 @@ def review_cmd(
         simplicity_violations = simplicity.scan_diff_level(raw_diff, summary)
     violations.extend(simplicity_violations)
     reviewer = LLMReviewerEngine(config=load_config(target_repo))
-    dom_type = analyzer_domain(detect_repo_domain(target_repo))
+    dom_type = detect_domain(target_repo)
 
     verdict = reviewer.review(
         prompt="Manual review requested",
@@ -1309,6 +1347,35 @@ def laya_status_cmd():
     console.print(table)
 
 
+@laya_app.command("calibrate")
+def laya_calibrate_cmd(
+    model: str = typer.Option("laya-int8", "--model", "-m", help="Model checkpoint to calibrate"),
+):
+    """
+    Measure the installed Laya model on a labelled prompt set. Triage uses the neural model only
+    when this passes; otherwise it keeps the keyword reflex engine.
+    """
+    from guard.core.laya_calibration import LABELLED_PROMPTS, PASS_ACCURACY, calibrate
+    from guard.core.laya_onnx import get_model_path, is_model_installed
+
+    if not is_model_installed(model):
+        console.print(f"[yellow]Model {model} is not installed. Run `guard laya download` first.[/yellow]")
+        raise typer.Exit(code=2)
+    neural = LayaEngine(model_name=model, require_calibration=False)
+    reflex = LayaEngine(model_name=model, prefer_neural=False)
+    console.print(f"[cyan]Calibrating {model} on {len(LABELLED_PROMPTS)} labelled prompts...[/cyan]")
+    record = calibrate(get_model_path(model), lambda p: neural.triage(p).domain.value)
+    reflex_correct = sum(reflex.triage(p).domain.value == e for p, e in LABELLED_PROMPTS)
+    verdict = "[bold green]PASSED[/bold green]" if record["passed"] else "[bold red]FAILED[/bold red]"
+    console.print(
+        f"{verdict}: neural domain accuracy {record['correct']}/{record['total']} "
+        f"({record['accuracy']:.0%}, threshold {PASS_ACCURACY:.0%}); "
+        f"reflex engine on the same set: {reflex_correct}/{record['total']}."
+    )
+    if not record["passed"]:
+        console.print("[yellow]Triage keeps using the reflex engine until a model passes calibration.[/yellow]")
+
+
 @laya_app.command("download")
 def laya_download_cmd(
     model: str = typer.Option("laya-int8", "--model", "-m", help="Model checkpoint: laya-int8 (554MB)"),
@@ -1388,6 +1455,12 @@ def _force_utf8_console():
 
 def main():
     _force_utf8_console()
+    # After an upgrade, refresh the hooks and directive blocks guard wrote earlier (once per version)
+    try:
+        for msg in refresh_after_upgrade():
+            console.print(f"[cyan]🔄 guard {__version__}: {msg}[/cyan]")
+    except Exception as e:  # never block the actual command
+        console.print(f"[yellow]guard refresh skipped: {e}[/yellow]")
     maybe_trigger_background_update_check()
     try:
         app()

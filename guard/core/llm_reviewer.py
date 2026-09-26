@@ -44,7 +44,8 @@ def _parse_invariant_proposals(text: str) -> List[dict]:
         if len(parts) == 2:
             out.append({"id": parts[0], "description": parts[1], "checks": []})
         elif len(parts) >= 5 and parts[3].lower() in ("forbid", "require"):
-            regex = " | ".join(parts[4:])
+            # `\_` is a markdown escape; in a regex it means `_`, so dropping it keeps the meaning
+            regex = " | ".join(parts[4:]).replace("\\_", "_")
             # Models often markdown-escape paths (`project\_invariants.py`); a glob never needs that
             files = re.sub(r"\\([_*\[\]])", r"\1", parts[2])
             out.append({"id": parts[0], "description": parts[1],

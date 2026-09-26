@@ -113,6 +113,52 @@
         { "files": "guard/core/llm_reviewer.py", "require": "same language as the existing invariant descriptions" }
       ],
       "origin": "llm:guard-1790378716"
+    },
+    {
+      "id": "LAYA-01",
+      "description": "The Laya neural model drives triage only after it passed `guard laya calibrate` for that exact model file.",
+      "rationale": "The int8 weights returned near-uniform probabilities and scored at chance level (19%) while being reported as a neural decision.",
+      "checks": [
+        { "files": "guard/core/laya_engine.py", "require": "neural_is_calibrated\\(get_model_path\\(self\\.model_name\\)\\)" },
+        { "files": "guard/core/laya_calibration.py", "require": "PASS_ACCURACY = 0\\.[5-9]" }
+      ]
+    },
+    {
+      "id": "DOMAIN-01",
+      "description": "The repository domain is scored from several signals, never taken from the first marker file, and the build command is resolved per ecosystem.",
+      "rationale": "First-match detection called Node backends frontend (package.json) and a fullstack app infra (Dockerfile), which also ran `docker build` as the build check.",
+      "checks": [
+        { "files": "guard/domains/detector.py", "require": "def score_repo_domain\\(" },
+        { "files": "guard/domains/detector.py", "forbid": "for analyzer in ALL_ANALYZERS" },
+        { "files": "guard/domains/detector.py", "require": "BUILD_RESOLUTION_ORDER" }
+      ]
+    },
+    {
+      "id": "SETUP-01",
+      "description": "Refresh rewrites only guard-owned content: directive blocks between guard markers and marked hook blocks; unmarked guard text is reported, not rewritten.",
+      "rationale": "Guard now edits agent docs and repository hooks after upgrades; touching user content would be destructive.",
+      "checks": [
+        { "files": "guard/core/repo_setup.py", "require": "if DIRECTIVE_START not in text or DIRECTIVE_END not in text:" },
+        { "files": "guard/core/repo_setup.py", "require": "return None  # guard is referenced in some other form" }
+      ]
+    },
+    {
+      "id": "LAYA-02",
+      "description": "A calibration record applies only to the exact model file it measured (path, size, mtime); replacing the weights requires re-calibration",
+      "rationale": "Discovered by the LLM gate review",
+      "checks": [
+        { "files": "guard/core/laya_calibration.py", "require": "_model_fingerprint" }
+      ],
+      "origin": "llm:guard-1790387683"
+    },
+    {
+      "id": "INV-03",
+      "description": "An empty `guard.invariants.json` (e.g. just created by lazy setup) falls back to the domain template invariants instead of yielding none",
+      "rationale": "Discovered by the LLM gate review",
+      "checks": [
+        { "files": "guard/domains/detector.py", "require": "if project_items:" }
+      ],
+      "origin": "llm:guard-1790387683"
     }
   ]
 }

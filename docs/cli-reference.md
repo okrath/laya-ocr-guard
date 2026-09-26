@@ -100,7 +100,11 @@ guard config sync
 
 Manages Git hooks, AI Agent directives, and multi-repo workspace protection.
 
+Without options, `guard hook install` installs the **global** hooks (`core.hooksPath ~/.guard/hooks`) and sets up the current repository. Every other repository is set up automatically the first time guard runs in it: `guard.invariants.json` is created when missing, and when the repository uses its own `core.hooksPath` (the global hook does not run there) a marked guard block is inserted after the shebang of its `pre-commit`. `guard hook refresh` rewrites what guard installed earlier to the current version; the same refresh runs once automatically after each upgrade.
+
 ```bash
+guard hook install          # global hooks + set up this repository
+guard hook refresh          # refresh global hooks, repository guard blocks and marked directive blocks
 # Interactive setup (auto-detects single repo vs multi-repo workspace):
 guard hook install
 
@@ -211,13 +215,18 @@ guard laya download [--force]
 
 # Run interactive System 1 triage classification test on a prompt:
 guard laya triage "<prompt>"
+
+# Measure the installed model on the labelled prompt set; the neural model is used only after it passes:
+guard laya calibrate
 ```
+
+Triage uses the neural model only when this exact model file passed `guard laya calibrate` (domain accuracy >= 70%). The current `laya-int8` weights score 19% (chance level), so the keyword reflex engine is used. The domain that selects invariants and the build command is scored from the repository itself, not from Laya.
 
 ### Options for `guard laya download`:
 * `-m, --model <laya-int8>`: Model checkpoint to download (default: `laya-int8`, 554MB high-fidelity INT8).
 * `-f, --force`: Re-download weights even if already cached.
 
-> 💡 **Zero-Dependency Fallback:** If weights are not yet downloaded, Guard runs its sub-1ms Zero-Overhead Reflex Matrix automatically so workflows are never blocked.
+> 💡 **Zero-Dependency Fallback:** If weights are not downloaded or not calibrated, Guard runs its sub-1ms reflex engine automatically so workflows are never blocked.
 
 ---
 *Created and maintained by [@okrath](https://github.com/okrath) &mdash; Source code available at [github.com/okrath/laya-ocr-guard](https://github.com/okrath/laya-ocr-guard).*

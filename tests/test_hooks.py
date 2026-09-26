@@ -278,6 +278,7 @@ def test_global_git_hooks(monkeypatch, tmp_path):
     fake_home = tmp_path / "fake_home"
     fake_home.mkdir()
     monkeypatch.setattr(Path, "home", lambda: fake_home)
+    monkeypatch.setenv("GUARD_HOME", str(fake_home / ".guard"))
 
     git_globals = {}
 

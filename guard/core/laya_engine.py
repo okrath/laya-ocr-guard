@@ -135,16 +135,30 @@ class LayaEngine:
     are cached locally, with instant heuristic fallback when offline.
     """
 
-    def __init__(self, model_name: str = "laya-int8", device: str = "cpu", prefer_neural: bool = True):
+    def __init__(
+        self,
+        model_name: str = "laya-int8",
+        device: str = "cpu",
+        prefer_neural: bool = True,
+        require_calibration: bool = True,
+    ):
         self.model_name = model_name
         self.device = device
         self.prefer_neural = prefer_neural
         self._router = None
+        self.neural_note = ""
 
         if prefer_neural:
-            from guard.core.laya_onnx import is_model_installed
+            from guard.core.laya_calibration import neural_is_calibrated
+            from guard.core.laya_onnx import get_model_path, is_model_installed
             if is_model_installed(self.model_name):
-                self._mode = "laya_onnx_neural"
+                # An installed model is used only after it passed `guard laya calibrate`
+                if not require_calibration or neural_is_calibrated(get_model_path(self.model_name)):
+                    self._mode = "laya_onnx_neural"
+                else:
+                    self.prefer_neural = False
+                    self._mode = "reflex_fast"
+                    self.neural_note = "neural model not calibrated (run `guard laya calibrate`); using reflex engine"
             else:
                 try:
                     from laya import Router

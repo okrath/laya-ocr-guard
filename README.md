@@ -107,10 +107,13 @@ pip install -e .
 ### 🧠 Laya Neural Engine Setup (Embedded ONNX)
 `guard` embeds the native **Laya System 1 Neural Engine** using ONNX Runtime and ModernBERT tokenizers. **No `pip install laya` or 2.5 GB PyTorch dependencies required!**
 
-To download and cache the standard high-fidelity INT8 neural weights (~554 MB, 99.8% accuracy parity):
+To download and cache the INT8 neural weights (~554 MB):
 ```bash
 # Download standard INT8 weights from HuggingFace:
 guard laya download
+
+# Measure the installed model on a labelled prompt set (required before it is used):
+guard laya calibrate
 
 # Inspect engine status, cache directory, and hardware acceleration:
 guard laya status
@@ -118,7 +121,9 @@ guard laya status
 # Test interactive System 1 triage on a prompt:
 guard laya triage "Center checkout button and fix responsive modal CSS"
 ```
-*(If weights are not yet downloaded, Guard runs its sub-1ms Zero-Overhead Reflex Matrix automatically so workflows are never blocked).*
+**Calibration gate.** Triage uses the neural model only after that exact model file passed `guard laya calibrate` (domain accuracy of at least 70% on the labelled set, recorded in `~/.guard/laya_calibration.json`). Otherwise it uses the sub-1ms keyword reflex engine. On the current `laya-int8` weights the model scores 3/16 (19%, chance level; it returns near-uniform probabilities) against 11/16 for the reflex engine, so the reflex engine is what runs. Laya's triage (intent, risk) is informational: the domain used for invariants and the build command comes from the repository itself.
+
+**Repository domain.** The domain is scored from several signals instead of the first marker file found: Node dependencies of every `package.json` (monorepos included), web framework configs, `index.html`, UI component files, `server/`/`api/` directories, Python/Go/Rust/Java manifests, Terraform/Helm/Kubernetes and container files. A Node backend is no longer reported as frontend, an app with a `Dockerfile` is not infra (and is built with its package script, not `docker build`), and a repository with both a web client and a server is `fullstack`.
 
 ### Optional: Install Alibaba OCR CLI
 `guard` bundles a built-in deterministic diff inspector and multi-language rules engine (0-cost). If you also want to enable the official Alibaba OCR CLI tool:
@@ -201,8 +206,13 @@ AI coding agents tend to be hyperactive—installing heavy libraries for trivial
 Navigate to any target project repository, multi-repo workspace, or install globally across your machine:
 
 ```bash
-# Interactive setup (auto-detects single repo vs multi-repo workspace):
+# Default: global Git hooks for every repository on this machine (core.hooksPath ~/.guard/hooks).
+# Each repository is then set up automatically the first time guard runs in it (see below).
 guard hook install
+
+# Rewrite what guard installed earlier to the current version (global hooks, guard blocks in
+# repository hooks, directive blocks in agent docs). Runs automatically once after each upgrade.
+guard hook refresh
 
 # Workspace / Multi-Repo Mode (auto-discovers child Git repositories):
 # Prompts to select: [A] All repos, [1-N] specific repos (e.g. 2,3,7,8), [G] Global, or [N] None
@@ -212,7 +222,7 @@ guard hook install --select-repos "1,2"     # Selectively install to specific ch
 # Global Git Protection (Protects EVERY repository on your machine automatically):
 guard hook install --global                 # Sets git config --global core.hooksPath ~/.guard/hooks
 
-# Single Repo Shortcuts:
+# Per-repository modes (no global hooks):
 guard hook install --stealth                # 👻 Stealth Mode (Git hook only, zero workspace files, never pushed to remote)
 guard hook install --mode agent             # 🤖 Workspace Agent Directives (CLAUDE.md & AGENT.md)
 guard hook install --mode all               # 🛡️ Dual-Gate Full Protection (Git hooks + Agent Directives)
@@ -225,6 +235,15 @@ guard hook uninstall [--mode <git|agent|all>] [--global]
 ```
 
 > 🔒 **Strict Safe-Append Policy:** Guard NEVER overwrites existing user `CLAUDE.md` or `AGENT.md` directives. It creates a `.guard.bak` backup and cleanly appends Guard protocol markers. Uninstallation cleanly restores user files.
+
+**Automatic repository setup.** The first time guard runs inside a Git repository (`guard pre`, `guard post`, `guard hook install`), it:
+- creates `guard.invariants.json` when missing, importing the agent docs' invariant section;
+- checks which hook directory Git really uses there. With the global hooks nothing is added. When the repository sets its own `core.hooksPath` (for example husky's `.husky`), the global hook never runs, so guard inserts a marked block (`# >>> LAYA-OCR-GUARD >>>`) right after the shebang of that `pre-commit` (or creates it). Existing hook commands are kept.
+- records the repository in `~/.guard/repos.json`.
+
+Outside a Git repository only the agent directives apply.
+
+**Refresh after an upgrade.** The first guard command after a version change rewrites, only where guard wrote them before: the global hooks (when `core.hooksPath` points at `~/.guard/hooks`), the guard block in hooks of recorded repositories, and the directive block between the `LAYA-OCR-GUARD DUAL-GATE HOOK: START/END` markers in agent docs (the repositories' `CLAUDE.md`/`AGENT.md`/`AGENTS.md`/`GEMINI.md` and the global `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`, `~/.config/opencode/AGENTS.md`). Guard directives pasted without markers are reported, never rewritten. `guard hook refresh` runs the same refresh on demand.
 ### 2. Pre-Task Phase (`guard pre`)
 Execute before modifying source code:
 ```bash

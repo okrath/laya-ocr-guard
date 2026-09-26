@@ -114,7 +114,7 @@ def test_laya_engine_with_onnx_installed(tmp_path):
     with patch("guard.core.laya_onnx.get_model_path", return_value=fake_model), \
          patch("guard.core.laya_onnx.is_model_installed", return_value=True), \
          patch.object(LayaONNXRuntime, "predict_questions", return_value=mock_answers):
-        engine = LayaEngine(model_name="laya-int8")
+        engine = LayaEngine(model_name="laya-int8", require_calibration=False)
         assert engine.mode == "laya_onnx_neural"
         res = engine.triage("Center the modal dialog button")
         assert res.domain == DomainType.FRONTEND
@@ -123,3 +123,14 @@ def test_laya_engine_with_onnx_installed(tmp_path):
         assert res.core_breach_risk is False
         assert res.engine_mode == "laya_onnx_neural"
         assert "Confidence: 98.0%" in res.reasoning
+
+
+def test_uncalibrated_model_falls_back_to_reflex(tmp_path):
+    """A model that never passed `guard laya calibrate` must not drive triage."""
+    fake_model = tmp_path / "model_int8.onnx"
+    fake_model.write_bytes(b"0" * 15_000_000)
+    with patch("guard.core.laya_onnx.get_model_path", return_value=fake_model), \
+         patch("guard.core.laya_onnx.is_model_installed", return_value=True):
+        engine = LayaEngine(model_name="laya-int8")
+        assert engine.mode == "reflex_fast"
+        assert "not calibrated" in engine.neural_note

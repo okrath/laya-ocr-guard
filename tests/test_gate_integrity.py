@@ -102,6 +102,7 @@ def test_deleted_files_are_flagged(tmp_path):
 
 def test_project_invariants_replace_templates_and_are_really_checked(tmp_path):
     repo = make_repo(tmp_path)
+    (repo / "index.html").write_text("<div id=app></div>\n", encoding="utf-8")  # a web frontend
     write_invariants(repo)
     assert execute_pre_task("Fix src/chat.ts", repo_path=repo) is True
     pre = SessionManager(repo).load_local_session().pre
@@ -201,7 +202,7 @@ def test_mid_task_commit_is_still_audited(tmp_path):
     repo = make_repo(tmp_path)
     assert execute_pre_task("Fix src/chat.ts", repo_path=repo) is True
     (repo / "src" / "other.ts").write_text("export const x = 2;\n", encoding="utf-8")
-    git(repo, "commit", "-am", "sneak")
+    git(repo, "commit", "--no-verify", "-am", "sneak")  # an agent bypassing the hook
     assert execute_post_task(repo_path=repo) is False
     assert SessionManager(repo).load_local_session().post.out_of_scope_files == ["src/other.ts"]
 

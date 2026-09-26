@@ -84,7 +84,8 @@ class HookInstaller:
 
     @staticmethod
     def get_global_hooks_dir() -> Path:
-        return Path.home() / ".guard" / "hooks"
+        from guard.core.repo_setup import guard_home
+        return guard_home() / "hooks"
 
     @classmethod
     def get_global_hooks_status(cls) -> Dict[str, Any]:
